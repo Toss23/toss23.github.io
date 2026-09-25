@@ -695,6 +695,11 @@ body {
 #dialog-actions { justify-content: stretch; flex-wrap: wrap; }
 #dialog-actions button { flex: 1 1 calc(50% - 4px); min-width: 0; }
 
+/* Если кнопок больше двух — раскладываем в столбик */
+#dialog-actions:has(button:nth-child(3)) button {
+  flex: 1 1 100%;
+}
+
 #dialog-input {
   background: #1e1e1e;
   border: 1px solid #3c3c3c;

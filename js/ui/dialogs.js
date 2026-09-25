@@ -111,11 +111,13 @@ export function initDialogs() {
   }
 
   return {
-    choose({ title = "Выбор", text = "", options = [], onDismiss = null } = {}) {
+    choose({ title = "Выбор", text = "", options = [], onDismiss } = {}) {
+      // По умолчанию диалог выбора можно закрыть кликом по фону.
+      const dismiss = onDismiss !== undefined ? onDismiss : () => {};
       openRaw({
         title,
         text,
-        onDismiss,
+        onDismiss: dismiss,
         buttons: options.map((o) => ({
           text: o.text,
           kind: o.kind,

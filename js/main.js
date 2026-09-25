@@ -148,10 +148,12 @@ function openCreateMenu() {
   if (!mode) return;
   dialogs.choose({
     title: "Создать",
+    onDismiss: () => {},
     options: [
       { text: "📄 Создать файл", onClick: () => createFile() },
       { text: "📁 Создать папку", onClick: () => createFolder() },
       { text: "📤 Загрузить", kind: "primary", onClick: () => openUploadDialog() },
+      { text: "Отмена", onClick: () => {} },
     ],
   });
 }
@@ -161,6 +163,7 @@ function openMoreMenu() {
   if (!mode) return;
   dialogs.choose({
     title: "Другое",
+    onDismiss: () => {},
     options: [
       {
         text: "📦 Скачать архив (ZIP)",
@@ -169,6 +172,7 @@ function openMoreMenu() {
           downloadRepoZip();
         },
       },
+      { text: "Отмена", onClick: () => {} },
     ],
   });
 }
