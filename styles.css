@@ -476,13 +476,12 @@ body {
 }
 .dirty-marker { color: #e2c08d; font-size: 16px; flex-shrink: 0; }
 
+/* Кнопки Сохранить / Откатить в тулбаре редактора */
 #save-file,
 #revert-file {
-  padding: 6px 8px;
-  font-size: 14px;
-  line-height: 1;
-  min-height: 32px;
-  min-width: 40px;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  min-height: 34px;
 }
 #save-file:disabled,
 #revert-file:disabled { opacity: 0.35; cursor: default; }

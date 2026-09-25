@@ -2388,11 +2388,39 @@ async function confirmDeleteSelected() {
 /* ---------- Откат ---------- */
 
 async function revertFile(path) {
-  const { cloned, mode, files } = getState();
-  if (mode !== "local" || !cloned) return;
-
+  const { cloned, mode, files, octokit, repo, branch } = getState();
   const fileEntry = files.find((f) => f.path === path);
   if (!fileEntry) return;
+
+  // Remote-режим — откат к версии с GitHub.
+  if (mode === "remote") {
+    if (fileEntry.isNew) {
+      // Новый файл в remote не имеет версии на GitHub — просто убираем.
+      removeDirty(path);
+      setState({ files: files.filter((f) => f.path !== path) });
+      editorScreen.close();
+      setState({ openFile: null });
+      setScreen(SCREENS.FILES);
+      renderFiles();
+      setStatus("Создание отменено");
+      return;
+    }
+    try {
+      const raw = await getFile(octokit, repo.owner, repo.name, path, branch);
+      const eol = detectEol(raw);
+      const contentLf = toLf(raw);
+      removeDirty(path);
+      editorScreen.revert({ content: contentLf, baseSha: fileEntry.sha });
+      renderFiles();
+      setStatus("Изменения отменены");
+    } catch (e) {
+      setStatus("Ошибка отката: " + e.message, true);
+    }
+    return;
+  }
+
+  // Local-режим.
+  if (mode !== "local" || !cloned) return;
 
   if (fileEntry.isNew) {
     await storage.deleteFiles(cloned.key, [path]);

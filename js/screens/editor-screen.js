@@ -128,8 +128,10 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       check();
     },
     setLocalMode(visible) {
+      // Сохранить — только в local-режиме (пишет в IndexedDB).
       saveBtn.classList.toggle("hidden", !visible);
-      revertBtn.classList.toggle("hidden", !visible);
+      // Откатить — всегда доступно (и local, и remote).
+      revertBtn.classList.remove("hidden");
     },
     showBinaryNotice(path, sizeText) {
       base = null;
