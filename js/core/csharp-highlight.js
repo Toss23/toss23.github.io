@@ -14,6 +14,12 @@ const KEYWORDS = new Set([
   "get","set","value","where","when"
 ]);
 
+const MODIFIERS = new Set([
+  "public","private","protected","internal","static","readonly","const",
+  "sealed","abstract","virtual","override","new","partial","extern",
+  "unsafe","volatile","async","required"
+]);
+
 const TYPE_AFTER = new Set([
   "new","typeof","nameof","is","as","sizeof","default","in",
   "out","ref","stackalloc"
@@ -250,14 +256,13 @@ export function tokenize(code) {
     if (/^[A-Z][A-Za-z0-9_]*$/.test(t.text)) { t.type = "type"; continue; }
   }
 
-  // ===== Проход 3: аргументы методов и конструкторов =====
+  // ===== Проход 3: аргументы методов =====
   for (let k = 0; k < tokens.length; k++) {
     const t = tokens[k];
     if (t.type !== "method") continue;
     let i = k + 1;
     while (i < tokens.length && (tokens[i].type === "ws" || tokens[i].type === "comment")) i++;
     if (i >= tokens.length || tokens[i].type !== "op" || tokens[i].text !== "(") continue;
-
     let depth = 1;
     let j = i + 1;
     while (j < tokens.length && depth > 0) {
@@ -268,7 +273,6 @@ export function tokenize(code) {
       j++;
     }
     if (depth > 0) continue;
-
     let after = j + 1;
     while (after < tokens.length && (tokens[after].type === "ws" || tokens[after].type === "comment")) after++;
     const afterTok = after < tokens.length ? tokens[after] : null;
@@ -276,32 +280,21 @@ export function tokenize(code) {
       (afterTok.text === "{" || afterTok.text === "=>");
     if (!isDeclaration) continue;
 
+    let angle = 0;
     for (let x = i + 1; x < j; x++) {
       const tk = tokens[x];
+      if (tk.type === "op") {
+        if (tk.text === "<") angle++;
+        else if (tk.text === ">") angle = Math.max(0, angle - 1);
+        continue;
+      }
+      if (angle > 0) continue;
       if (tk.type === "ident") tk.type = "arg";
     }
   }
 
-  // ===== Проход 4: события (объявления на уровне класса) =====
-  const classBodyDepth = findClassBodyDepth(tokens);
-  if (classBodyDepth >= 0) {
-    const depths = computeDepths(tokens);
-    for (let k = 0; k < tokens.length; k++) {
-      if (depths[k] !== classBodyDepth) continue;
-      const t = tokens[k];
-      if (t.type !== "ident" && t.type !== "type") continue;
-      let scan = k - 1;
-      let isEvent = false;
-      while (scan >= 0) {
-        const sk = tokens[scan];
-        if (sk.type === "op" && (sk.text === ";" || sk.text === "{" || sk.text === "}")) break;
-        if (sk.type === "keyword" && sk.text === "event") { isEvent = true; break; }
-        scan--;
-      }
-      if (isEvent) t.type = "event";
-      else if (t.type === "type") t.type = "ident";
-    }
-  }
+  // ===== Проход 4: поля, свойства, события =====
+  refineClassMembers(tokens);
 
   return tokens;
 }
@@ -332,6 +325,120 @@ function findClassBodyDepth(tokens) {
     return depths[j] + 1;
   }
   return -1;
+}
+
+function refineClassMembers(tokens) {
+  const classBodyDepth = findClassBodyDepth(tokens);
+  if (classBodyDepth < 0) return;
+  const depths = computeDepths(tokens);
+
+  const stmtIdxs = [];
+  for (let k = 0; k < tokens.length; k++) {
+    const t = tokens[k];
+    const d = depths[k];
+
+    if (d !== classBodyDepth) {
+      continue;
+    }
+
+    if (t.type === "op" && t.text === "{") {
+      if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0));
+      let inner = 1;
+      let j = k + 1;
+      while (j < tokens.length && inner > 0) {
+        if (tokens[j].type === "op" && tokens[j].text === "{") inner++;
+        else if (tokens[j].type === "op" && tokens[j].text === "}") inner--;
+        j++;
+      }
+      k = j - 1;
+      continue;
+    }
+
+    if (t.type === "op" && t.text === ";") {
+      if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0));
+      continue;
+    }
+
+    if (t.type === "op" && t.text === "}") {
+      if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0));
+      continue;
+    }
+
+    stmtIdxs.push(k);
+  }
+  if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs);
+}
+
+function processClassMember(tokens, idxs) {
+  if (idxs.length === 0) return;
+
+  let cutAt = idxs.length;
+  let paren = 0, angle = 0, bracket = 0;
+  for (let p = 0; p < idxs.length; p++) {
+    const k = idxs[p];
+    const t = tokens[k];
+    if (t.type === "op") {
+      if (paren === 0 && angle === 0 && bracket === 0) {
+        if (t.text === "(" || t.text === "=>" || t.text === "=") {
+          cutAt = p;
+          break;
+        }
+      }
+      if (t.text === "(") paren++;
+      else if (t.text === ")") paren--;
+      else if (t.text === "<") angle++;
+      else if (t.text === ">") angle = Math.max(0, angle - 1);
+      else if (t.text === "[") bracket++;
+      else if (t.text === "]") bracket--;
+    } else if (t.type === "keyword" && t.text === "where" && paren === 0 && angle === 0 && bracket === 0) {
+      cutAt = p;
+      break;
+    }
+  }
+
+  const decl = [];
+  for (let p = 0; p < cutAt; p++) {
+    const k = idxs[p];
+    const t = tokens[k];
+    if (t.type === "ws" || t.type === "comment") continue;
+    decl.push(k);
+  }
+  if (decl.length === 0) return;
+
+  let nameIdx = -1;
+  for (let p = decl.length - 1; p >= 0; p--) {
+    const k = decl[p];
+    if (tokens[k].type === "ident" || tokens[k].type === "type") {
+      nameIdx = k;
+      break;
+    }
+  }
+  if (nameIdx < 0) return;
+
+  let hasTypeBefore = false;
+  for (const k of decl) {
+    if (k >= nameIdx) break;
+    const tk = tokens[k];
+    if (tk.type === "keyword" && MODIFIERS.has(tk.text)) continue;
+    if (tk.type === "keyword" && tk.text === "event") continue;
+    hasTypeBefore = true;
+    break;
+  }
+  if (!hasTypeBefore) return;
+
+  let hasEvent = false;
+  for (const k of decl) {
+    if (k >= nameIdx) break;
+    if (tokens[k].type === "keyword" && tokens[k].text === "event") {
+      hasEvent = true;
+      break;
+    }
+  }
+
+  const nameTok = tokens[nameIdx];
+  if (hasEvent) nameTok.type = "event";
+  else if (/^_/.test(nameTok.text) || /^[a-z]/.test(nameTok.text)) nameTok.type = "field";
+  else nameTok.type = "property";
 }
 
 export function renderTokens(tokens) {
