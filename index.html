@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#252526">
+  <title>GitHub Client</title>
+  <link rel="icon" type="image/png" href="./favicon.png">
+  <link rel="apple-touch-icon" href="./favicon.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <!-- Экран авторизации -->
+  <section id="screen-auth" class="screen">
+    <div class="auth-inner">
+      <h1>GitHub Client</h1>
+      <p class="hint">
+        Выберите .txt файл с вашим Personal Access Token
+        (<a href="https://github.com/settings/tokens/new?description=Mobile%20GitHub%20Client&scopes=repo" target="_blank" rel="noopener">создать</a>).
+      </p>
+      <button id="login-btn" class="primary big">Войти</button>
+      <input id="token-file" type="file" accept=".txt,text/plain" hidden>
+    </div>
+  </section>
+
+  <!-- Шапка -->
+  <header id="app-header" class="hidden">
+    <span id="user-info"></span>
+    <button id="fullscreen-btn" class="icon-btn" title="На весь экран">⤢</button>
+    <button id="logout" class="icon-btn">Выйти</button>
+  </header>
+
+  <!-- Экран репозиториев -->
+  <section id="screen-repos" class="screen hidden">
+    <div class="screen-header">
+      <h2>Репозитории</h2>
+      <input id="repo-filter" placeholder="Фильтр...">
+    </div>
+    <ul id="repo-list" class="list"></ul>
+  </section>
+
+  <!-- Экран файлов -->
+  <section id="screen-files" class="screen hidden">
+    <div class="screen-header">
+      <div id="breadcrumbs" class="breadcrumbs"></div>
+      <select id="branch-select"></select>
+
+        <div id="file-actions" class="file-actions">
+          <button id="btn-new-file" class="icon-btn">📄 Создать файл</button>
+          <button id="btn-new-folder" class="icon-btn">📁 Создать папку</button>
+          <button id="btn-upload" class="icon-btn">📤 Загрузить</button>
+          <button id="btn-delete-mode" class="icon-btn">☑️ Выбрать</button>
+          <button id="btn-history" class="icon-btn">📜 История</button>
+        </div>
+
+        <div id="delete-actions" class="delete-actions hidden">
+          <span id="delete-count" class="delete-count">Выбрано: 0</span>
+          <button id="btn-rename" class="icon-btn" disabled>✏️ Переименовать</button>
+          <button id="btn-delete-confirm" class="icon-btn danger" disabled>🗑️ Удалить выбранные</button>
+          <button id="btn-delete-cancel" class="icon-btn">Отмена</button>
+        </div>
+
+      <input id="upload-input" type="file" multiple class="visually-hidden">
+      <input id="upload-folder-input" type="file" webkitdirectory multiple class="visually-hidden">
+    </div>
+    <ul id="entries-list" class="list"></ul>
+  </section>
+
+  <!-- Экран редактора -->
+  <section id="screen-editor" class="screen hidden">
+    <div class="screen-header">
+      <span id="file-path" class="file-path"></span>
+      <span id="dirty-marker" class="hidden dirty-marker">●</span>
+      <button id="save-file" class="icon-btn hidden" title="Сохранить в локальную копию" disabled>💾</button>
+      <button id="revert-file" class="icon-btn hidden" title="Откатить изменения" disabled>↩️</button>
+    </div>
+    <textarea id="file-content" disabled spellcheck="false"></textarea>
+  </section>
+
+  <!-- Экран истории коммитов -->
+  <section id="screen-history" class="screen hidden">
+    <div class="screen-header">
+      <button id="history-back" class="icon-btn" title="Назад">⬅️</button>
+      <span id="history-title" class="file-path"></span>
+      <button id="history-refresh" class="icon-btn" title="Обновить">🔄</button>
+    </div>
+    <ul id="history-list" class="list history-list"></ul>
+  </section>
+
+  <!-- Экран просмотра изображения -->
+  <section id="screen-image" class="screen hidden">
+    <div class="screen-header">
+      <span id="image-path" class="file-path"></span>
+    </div>
+    <div class="image-viewer">
+      <img id="image-content" alt="">
+    </div>
+  </section>
+
+  <!-- Нижняя панель -->
+  <nav id="nav-bar" class="hidden">
+    <button id="nav-commit" title="Коммит">🟩 Коммит</button>
+    <button id="nav-exit" title="Выйти из репозитория">🏠 Выйти</button>
+    <button id="nav-back" title="Назад">⬅️ Назад</button>
+  </nav>
+
+  <!-- Модалка коммита -->
+  <div id="commit-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Изменённые файлы</h3>
+      <ul id="commit-files" class="list small"></ul>
+      <input id="commit-message" placeholder="Сообщение коммита">
+      <div class="modal-actions">
+        <button id="commit-revert-all" class="danger hidden">↩️ Откатить всё</button>
+        <button id="commit-cancel">Отмена</button>
+        <button id="commit-submit" class="primary">Коммит</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка выбора режима репозитория -->
+  <div id="repo-actions-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3 id="repo-actions-title">Репозиторий</h3>
+      <div class="action-list">
+        <button id="repo-actions-remote" class="action-row">
+          📡 Открыть временно
+          <span class="action-sub">Файлы с GitHub, изменения пропадут при перезагрузке</span>
+        </button>
+        <button id="repo-actions-local" class="action-row hidden">
+          📦 Открыть локальную копию
+          <span class="action-sub">Работа с файлами на устройстве</span>
+        </button>
+        <div class="clone-block">
+          <button id="repo-actions-clone" class="action-row">
+            💾 Клонировать на устройство
+            <span class="action-sub">Локальные файлы + коммиты + diff</span>
+          </button>
+          <div id="clone-size-info" class="clone-size-info hidden">
+            <div class="clone-size-bar">
+              <div id="clone-size-fill" class="clone-size-fill"></div>
+            </div>
+            <div id="clone-size-text" class="clone-size-text">Расчёт размера...</div>
+          </div>
+        </div>
+        <button id="repo-actions-delete" class="action-row danger hidden">
+          🗑️ Удалить локальную копию
+        </button>
+      </div>
+      <div class="modal-actions">
+        <button id="repo-actions-cancel">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка обновления -->
+  <div id="update-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3 id="update-modal-title">Есть обновления на GitHub</h3>
+      <p id="update-modal-text" class="modal-text"></p>
+      <div class="modal-actions">
+        <button id="update-no">Открыть как есть</button>
+        <button id="update-yes" class="primary">Обновить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка истории коммита -->
+  <div id="history-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h3 id="history-modal-title">Коммит</h3>
+        <button id="history-modal-close" class="icon-btn">✕</button>
+      </div>
+      <ul id="history-modal-body" class="list small"></ul>
+      <button id="history-modal-revert" class="primary danger wide hidden" title="Отменить коммит">↩️ Отменить коммит</button>
+    </div>
+  </div>
+
+  <!-- Универсальный диалог -->
+  <div id="dialog-modal" class="modal hidden">
+    <div class="modal-content dialog-content">
+      <h3 id="dialog-title">Подтверждение</h3>
+      <p id="dialog-text" class="modal-text"></p>
+      <input id="dialog-input" class="hidden" type="text" autocomplete="off">
+      <div class="modal-actions" id="dialog-actions"></div>
+    </div>
+  </div>
+
+  <!-- Прогрессбар -->
+  <div id="progress-box" class="progress-box hidden">
+    <div class="progress-fill" id="progress-fill"></div>
+    <span class="progress-label" id="progress-label">0%</span>
+  </div>
+
+  <div id="status"></div>
+
+  <script type="module">
+    const candidates = ["./js/main.js", "./main.js"];
+
+    async function tryLoad() {
+      const tried = [];
+      for (const path of candidates) {
+        let status = "?";
+        try {
+          const res = await fetch(path, { method: "HEAD", cache: "no-store" });
+          status = res.status;
+        } catch (e) { status = "network error"; }
+        tried.push({ path, status });
+
+        if (status === 200) {
+          try {
+            await import(path);
+            return;
+          } catch (e) {
+            showError(
+              `main.js найден по пути ${path}, но не загрузился:\n\n` +
+              e.message + "\n\n" + (e.stack || "")
+            );
+            throw e;
+          }
+        }
+      }
+      showError(
+        "main.js не найден. Проверено:\n\n" +
+        tried.map((t) => `  ${t.path}  →  ${t.status}`).join("\n")
+      );
+    }
+
+    function showError(text) {
+      document.body.innerHTML =
+        '<pre style="color:#f48771;padding:20px;font-family:monospace;' +
+        'white-space:pre-wrap;background:#1e1e1e;font-size:13px">' +
+        text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]) +
+        "</pre>";
+    }
+
+    tryLoad();
+  </script>
+</body>
+</html>
