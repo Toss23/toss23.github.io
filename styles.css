@@ -723,7 +723,7 @@ body {
   border: 1px solid #3c3c3c;
   border-radius: 6px;
   padding: 12px 14px;
-  z-index: 1000;      /* выше busy-overlay (900) */
+  z-index: 200;
   overflow: hidden;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
 }
