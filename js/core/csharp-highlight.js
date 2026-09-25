@@ -231,8 +231,6 @@ export function tokenize(code) {
   }
 
   // ===== Проход 2: методы, типы, интерфейсы =====
-  // После точки НЕ подсвечиваем: Result, Value, Character — всё нейтральное.
-  // Типы в начале выражения (Console, String) уже получили type в первом проходе.
   for (let k = 0; k < tokens.length; k++) {
     const t = tokens[k];
     if (t.type !== "ident") continue;
@@ -243,23 +241,14 @@ export function tokenize(code) {
     const prev = p >= 0 ? tokens[p] : null;
     const next = nx < tokens.length ? tokens[nx] : null;
 
-    // Метод — идентификатор перед (
     if (next && next.text === "(") { t.type = "method"; continue; }
-
-    // После точки — оставляем как есть
     if (prev && prev.type === "op" && prev.text === ".") continue;
-
-    // После new/typeof — тип
     if (prev && prev.type === "keyword" && TYPE_AFTER.has(prev.text)) {
       if (isInterfaceName(t.text)) t.type = "interface";
       else t.type = "type";
       continue;
     }
-
-    // Заглавная I+заглавная — интерфейс
     if (isInterfaceName(t.text)) { t.type = "interface"; continue; }
-
-    // Заглавная в начале выражения — тип
     if (/^[A-Z][A-Za-z0-9_]*$/.test(t.text)) { t.type = "type"; continue; }
   }
 
@@ -300,8 +289,11 @@ export function tokenize(code) {
     }
   }
 
-  // ===== Проход 4: поля, свойства, события =====
-  refineClassMembers(tokens);
+  // ===== Проход 4: сбор имён членов класса =====
+  const memberMap = collectClassMembers(tokens);
+
+  // ===== Проход 5: применение имён по всему файлу =====
+  applyClassMembers(tokens, memberMap);
 
   return tokens;
 }
@@ -334,9 +326,10 @@ function findClassBodyDepth(tokens) {
   return -1;
 }
 
-function refineClassMembers(tokens) {
+function collectClassMembers(tokens) {
+  const map = new Map();
   const classBodyDepth = findClassBodyDepth(tokens);
-  if (classBodyDepth < 0) return;
+  if (classBodyDepth < 0) return map;
   const depths = computeDepths(tokens);
 
   const stmtIdxs = [];
@@ -347,7 +340,7 @@ function refineClassMembers(tokens) {
     if (d !== classBodyDepth) continue;
 
     if (t.type === "op" && t.text === "{") {
-      if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0));
+      if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0), map);
       let inner = 1;
       let j = k + 1;
       while (j < tokens.length && inner > 0) {
@@ -360,21 +353,22 @@ function refineClassMembers(tokens) {
     }
 
     if (t.type === "op" && t.text === ";") {
-      if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0));
+      if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0), map);
       continue;
     }
 
     if (t.type === "op" && t.text === "}") {
-      if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0));
+      if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0), map);
       continue;
     }
 
     stmtIdxs.push(k);
   }
-  if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs);
+  if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs, map);
+  return map;
 }
 
-function processClassMember(tokens, idxs) {
+function processClassMember(tokens, idxs, map) {
   if (idxs.length === 0) return;
 
   let cutAt = idxs.length;
@@ -440,10 +434,30 @@ function processClassMember(tokens, idxs) {
     }
   }
 
-  const nameTok = tokens[nameIdx];
-  if (hasEvent) nameTok.type = "event";
-  else if (/^_/.test(nameTok.text) || /^[a-z]/.test(nameTok.text)) nameTok.type = "field";
-  else nameTok.type = "property";
+  const name = tokens[nameIdx].text;
+  if (hasEvent) map.set(name, "event");
+  else if (/^_/.test(name) || /^[a-z]/.test(name)) map.set(name, "field");
+  else map.set(name, "property");
+}
+
+function applyClassMembers(tokens, memberMap) {
+  if (!memberMap || memberMap.size === 0) return;
+  for (let k = 0; k < tokens.length; k++) {
+    const t = tokens[k];
+    if (t.type !== "ident" && t.type !== "type") continue;
+    if (!memberMap.has(t.text)) continue;
+
+    let p = k - 1;
+    while (p >= 0 && (tokens[p].type === "ws" || tokens[p].type === "comment")) p--;
+    if (p >= 0 && tokens[p].type === "op" && tokens[p].text === ".") continue;
+
+    // Если токен — часть объявления метода (перед ним был метод)
+    let nx = k + 1;
+    while (nx < tokens.length && (tokens[nx].type === "ws" || tokens[nx].type === "comment")) nx++;
+    if (nx < tokens.length && tokens[nx].type === "op" && tokens[nx].text === "(") continue;
+
+    t.type = memberMap.get(t.text);
+  }
 }
 
 export function renderTokens(tokens) {
