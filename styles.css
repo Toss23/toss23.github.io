@@ -274,21 +274,70 @@ body {
 /* ============================================================
    Редактор
    ============================================================ */
-#file-content {
+/* ============================================================
+   Редактор с overlay-подсветкой
+   ============================================================ */
+#file-editor {
   flex: 1;
-  width: 100%;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: #2B2B2B;
+}
+
+#file-editor .editor-highlight,
+#file-editor #file-content {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 12px;
   border: none;
   outline: none;
-  resize: none;
-  background: #1e1e1e;
-  color: #ddd;
-  padding: 12px;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 14px;
   line-height: 1.55;
-  min-height: 0;
+  tab-size: 4;
+  white-space: pre;
+  word-wrap: normal;
+  overflow: auto;
+  box-sizing: border-box;
+  letter-spacing: 0;
 }
-#file-content:disabled { color: #555; }
+
+#file-editor #file-content {
+  background: transparent;
+  color: transparent;
+  caret-color: #A9B7C6;
+  z-index: 2;
+  resize: none;
+  min-height: 0;
+  width: auto;
+  height: auto;
+  flex: none;
+}
+#file-editor #file-content::selection { background: #214283; color: transparent; }
+#file-editor #file-content:disabled { color: transparent; }
+
+#file-editor .editor-highlight {
+  background: #2B2B2B;
+  color: #A9B7C6;
+  z-index: 1;
+  pointer-events: none;
+  scrollbar-width: none;
+}
+#file-editor .editor-highlight::-webkit-scrollbar { display: none; }
+
+/* Токены подсветки C# (Darcula / Rider) */
+.tok-keyword { color: #CC7832; }
+.tok-control { color: #CC7832; }
+.tok-type { color: #A9B7C6; }
+.tok-method { color: #FFC66D; }
+.tok-string { color: #6A8759; }
+.tok-char { color: #6A8759; }
+.tok-comment { color: #808080; font-style: italic; }
+.tok-number { color: #6897BB; }
+.tok-preprocessor { color: #BBB529; }
+.tok-op { color: #A9B7C6; }
 
 .file-path {
   flex: 1;

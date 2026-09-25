@@ -2,21 +2,57 @@ import { $ } from "@core/dom.js";
 import { UI } from "@core/config.js";
 import { gitBlobSha } from "@core/git-sha.js";
 import { fromLf } from "@core/encoding.js";
+import { tokenize, renderTokens } from "@core/csharp-highlight.js";
 
 export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   const textarea = $("file-content");
+  const highlight = $("file-highlight");
+  const codeEl = highlight ? highlight.querySelector("code") : null;
   const pathLabel = $("file-path");
   const marker = $("dirty-marker");
   const saveBtn = $("save-file");
   const revertBtn = $("revert-file");
 
+  if (!textarea || !highlight || !codeEl) {
+    console.error("editor-screen: не найдены #file-content или #file-highlight");
+  }
+
   let base = null;
   let savedLf = null;
-  let timer;
+  let checkTimer;
+  let highlightTimer;
+
+  function renderHighlight() {
+    if (!codeEl || !textarea) return;
+    const text = textarea.value;
+    try {
+      const tokens = tokenize(text);
+      codeEl.innerHTML = renderTokens(tokens);
+    } catch (e) {
+      console.warn("highlight:", e);
+      codeEl.textContent = text;
+    }
+    if (highlight) {
+      highlight.scrollTop = textarea.scrollTop;
+      highlight.scrollLeft = textarea.scrollLeft;
+    }
+  }
+
+  function scheduleHighlight() {
+    clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(renderHighlight, 120);
+  }
 
   textarea.addEventListener("input", () => {
-    clearTimeout(timer);
-    timer = setTimeout(check, UI.DIRTY_DEBOUNCE_MS);
+    scheduleHighlight();
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(check, UI.DIRTY_DEBOUNCE_MS);
+  });
+
+  textarea.addEventListener("scroll", () => {
+    if (!highlight) return;
+    highlight.scrollTop = textarea.scrollTop;
+    highlight.scrollLeft = textarea.scrollLeft;
   });
 
   saveBtn.addEventListener("click", () => {
@@ -45,30 +81,36 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     onStateChange?.(base.path, { modified, unsaved, current });
   }
 
+  function setContent(text, disabled) {
+    if (!textarea) return;
+    textarea.value = text;
+    textarea.disabled = !!disabled;
+    renderHighlight();
+  }
+
   return {
     open({ path, baseSha, eol, content }) {
       base = { path, baseSha, baseEol: eol };
       savedLf = content;
-      pathLabel.textContent = path;
-      textarea.value = content;
-      textarea.disabled = false;
-      clearTimeout(timer);
+      if (pathLabel) pathLabel.textContent = path;
+      setContent(content, false);
+      clearTimeout(checkTimer);
       check();
     },
     close() {
       base = null;
       savedLf = null;
-      pathLabel.textContent = "";
-      textarea.value = "";
-      textarea.disabled = true;
-      marker.classList.add("hidden");
+      if (pathLabel) pathLabel.textContent = "";
+      setContent("", true);
+      if (marker) marker.classList.add("hidden");
       saveBtn.disabled = true;
       saveBtn.classList.remove("active");
       revertBtn.disabled = true;
-      clearTimeout(timer);
+      clearTimeout(checkTimer);
+      clearTimeout(highlightTimer);
     },
     markSaved(path) {
-      if (!base) return;
+      if (!base || !textarea) return;
       if (path && base.path !== path) return;
       savedLf = textarea.value;
       check();
@@ -77,7 +119,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       if (!base) return;
       savedLf = content;
       base.baseSha = baseSha;
-      textarea.value = content;
+      setContent(content, false);
       check();
     },
     updateBaseSha(newSha) {
@@ -92,10 +134,9 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     showBinaryNotice(path, sizeText) {
       base = null;
       savedLf = null;
-      pathLabel.textContent = path;
-      textarea.value = `📦 Бинарный файл — ${sizeText}\n\nПросмотр и редактирование недоступны.`;
-      textarea.disabled = true;
-      marker.classList.add("hidden");
+      if (pathLabel) pathLabel.textContent = path;
+      setContent("\uD83D\uDCE6 Бинарный файл — " + sizeText + "\n\nПросмотр и редактирование недоступны.", true);
+      if (marker) marker.classList.add("hidden");
       saveBtn.disabled = true;
       saveBtn.classList.remove("active");
       revertBtn.disabled = true;

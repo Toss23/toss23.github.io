@@ -107,7 +107,10 @@
       <button id="save-file" class="icon-btn hidden" title="Сохранить в локальную копию" disabled>💾</button>
       <button id="revert-file" class="icon-btn hidden" title="Откатить изменения" disabled>↩️</button>
     </div>
-    <textarea id="file-content" disabled spellcheck="false"></textarea>
+    <div id="file-editor" class="editor-wrapper">
+      <pre id="file-highlight" class="editor-highlight" aria-hidden="true"><code></code></pre>
+      <textarea id="file-content" disabled spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" wrap="off"></textarea>
+    </div>
   </section>
 
   <!-- Экран истории коммитов -->
