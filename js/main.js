@@ -161,6 +161,15 @@ const aiModal = initAiModal({
   onGenerateFullInstructions: handleGenerateFullInstructions,
 });
 
+const btnDownloadZip = document.getElementById("btn-download-zip");
+if (btnDownloadZip) {
+  btnDownloadZip.addEventListener("click", () => {
+    const { mode, files } = getState();
+    if (!mode || !files.length) return;
+    downloadRepoZip();
+  });
+}
+
 const btnAi = document.getElementById("btn-ai");
 if (btnAi) {
   btnAi.addEventListener("click", () => {
