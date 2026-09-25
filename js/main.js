@@ -79,6 +79,13 @@ const filesScreen = initFilesScreen({
   onDownload: downloadSelected,
   onMove: moveSelected,
   onMoveFile: moveEntry,
+  onLongPressSelect: (path) => {
+    const { selectionMode } = getState();
+    if (selectionMode) return;
+    setSelectionMode(true);
+    toggleSelection(path);
+    renderFiles();
+  },
 });
 
 /* ---------- Загрузка с устройства ---------- */
@@ -1103,6 +1110,7 @@ function initMoveModal() {
 
 async function moveSelected() {
   const { selection, files, currentPath } = getState();
+  console.log("[moveSelected] selection size:", selection?.size);
   if (!selection || selection.size !== 1) return;
 
   const sel = [...selection][0];

@@ -64,7 +64,22 @@ body {
   border-color: #4a2a2a;
 }
 .icon-btn.danger:hover { background: #2a1c1c; }
-.icon-btn.danger:disabled { opacity: 0.4; cursor: default; }
+
+/* Явно серые и некликабельные disabled-кнопки */
+.icon-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  background: transparent;
+}
+.icon-btn:disabled:hover {
+  background: transparent;
+}
+#btn-rename:disabled,
+#btn-move:disabled,
+#btn-download:disabled {
+  color: #666;
+  border-color: #2a2a2a;
+}
 
 /* ============================================================
    Экраны
@@ -130,6 +145,8 @@ body {
   font-family: ui-monospace, Menlo, Consolas, monospace;
   user-select: none;
   min-height: 44px;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
 }
 .list li:hover { background: #2a2d2e; }
 .list li:active { background: #333; }
@@ -227,8 +244,6 @@ body {
   padding: 8px 10px;
   min-height: 38px;
 }
-#btn-rename:disabled,
-#btn-move:disabled { opacity: 0.4; cursor: default; }
 
 .delete-count {
   font-size: 12px;

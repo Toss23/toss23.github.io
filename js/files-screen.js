@@ -17,6 +17,7 @@ export function initFilesScreen({
   onDownload,
   onMove,
   onMoveFile,
+  onLongPressSelect,
 }) {
   const list = $("entries-list");
   const breadcrumbs = $("breadcrumbs");
@@ -36,6 +37,8 @@ export function initFilesScreen({
   const btnDownload = $("btn-download");
   const deleteCount = $("delete-count");
 
+  let suppressClickUntil = 0;
+
   branchSelect.addEventListener("change", () => onBranchChange(branchSelect.value));
   btnNewFile.addEventListener("click", () => onCreateFile());
   btnNewFolder.addEventListener("click", () => onCreateFolder());
@@ -45,9 +48,85 @@ export function initFilesScreen({
   if (btnHistory) btnHistory.addEventListener("click", () => onOpenHistory());
   if (btnRename) btnRename.addEventListener("click", () => onRename());
   if (btnDownload) btnDownload.addEventListener("click", () => onDownload());
-  if (btnMove) btnMove.addEventListener("click", () => onMove());
+  if (btnMove) btnMove.addEventListener("click", () => {
+    console.log("[files-screen] btn-move clicked");
+    onMove();
+  });
 
-  // ----- Внутренний drag-and-drop (ПК) -----
+  // ----- Long-press на телефоне -----
+  let touchTimer = null;
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchTargetPath = null;
+  let longPressFired = false;
+
+  list.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    const li = e.target.closest("li[data-path]");
+    if (!li) return;
+    if (li.classList.contains("updir")) return;
+
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchTargetPath = li.dataset.path;
+    longPressFired = false;
+
+    if (touchTimer) clearTimeout(touchTimer);
+    touchTimer = setTimeout(() => {
+      touchTimer = null;
+      longPressFired = true;
+      suppressClickUntil = Date.now() + 500;
+
+      if (navigator.vibrate) {
+        try { navigator.vibrate(30); } catch {}
+      }
+
+      onLongPressSelect?.(touchTargetPath);
+    }, 500);
+  }, { passive: true });
+
+  list.addEventListener("touchmove", (e) => {
+    if (!touchTimer) return;
+    const dx = e.touches[0].clientX - touchStartX;
+    const dy = e.touches[0].clientY - touchStartY;
+    if (dx * dx + dy * dy > 100) {
+      clearTimeout(touchTimer);
+      touchTimer = null;
+    }
+  }, { passive: true });
+
+  list.addEventListener("touchend", (e) => {
+    if (touchTimer) {
+      clearTimeout(touchTimer);
+      touchTimer = null;
+    }
+    if (longPressFired) {
+      e.preventDefault();
+      e.stopPropagation();
+      longPressFired = false;
+    }
+  });
+
+  list.addEventListener("touchcancel", () => {
+    if (touchTimer) {
+      clearTimeout(touchTimer);
+      touchTimer = null;
+    }
+    longPressFired = false;
+  });
+
+  function clickGuard(fn) {
+    return (e) => {
+      if (Date.now() < suppressClickUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      fn(e);
+    };
+  }
+
+  // ----- Внутренний drag-and-drop (только ПК) -----
   const INTERNAL_MIME = "application/x-internal-move";
 
   function isInternalDrag(e) {
@@ -179,7 +258,6 @@ export function initFilesScreen({
       const changedFolders = collectChangedFolders(dirtyPaths, deletedSet);
       clear(list);
 
-      // Пункт "..." в родительскую папку — только если мы не в корне.
       if (base) {
         const parentParts = base.split("/").filter(Boolean);
         parentParts.pop();
@@ -235,10 +313,11 @@ export function initFilesScreen({
 
         const li = el("li", {
           class: "entry folder",
-          onclick: () => {
+          dataset: { path: fullPath + "/" },
+          onclick: clickGuard(() => {
             if (selectionMode) onToggleSelect(fullPath + "/");
             else onOpenFolder(name);
-          },
+          }),
         }, children);
 
         if (changedFolders.has(fullPath)) li.classList.add("dirty");
@@ -292,10 +371,11 @@ export function initFilesScreen({
 
         const li = el("li", {
           class: "entry file",
-          onclick: () => {
+          dataset: { path: f.path },
+          onclick: clickGuard(() => {
             if (selectionMode) onToggleSelect(f.path);
             else onOpenFile(f);
-          },
+          }),
         }, children);
 
         if (dirtyPaths.has(f.path)) li.classList.add("dirty");
