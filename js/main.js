@@ -13,7 +13,7 @@ import {
 } from "./github.js";
 import { commitFiles } from "./commit.js";
 import { gitBlobSha, gitBlobShaFromBase64 } from "./git-sha.js";
-import { detectEol, toLf, fromLf, base64ToBytes } from "./encoding.js";
+import { detectEol, toLf, fromLf, base64ToBytes, bytesToBase64 } from "./encoding.js";
 import { readUploadedFile, saveUploadedEntry } from "./upload.js";
 import { initStatus, setStatus } from "./status.js";
 import { initHeader } from "./header.js";
@@ -31,8 +31,8 @@ import { initUpdateModal } from "./update-modal.js";
 import { initHistoryScreen } from "./history-screen.js";
 import { initHistoryModal } from "./history-modal.js";
 import { initImageScreen } from "./image-screen.js";
-import { revertCommit } from "./revert.js";
 import { initDropZone } from "./drop-zone.js";
+import { revertCommit } from "./revert.js";
 import { SCREENS, isImagePath } from "./config.js";
 import * as storage from "./storage.js";
 import { cloneRepo, checkRemoteHead } from "./clone.js";
@@ -76,6 +76,8 @@ const filesScreen = initFilesScreen({
   onConfirmDelete: confirmDeleteSelected,
   onOpenHistory: openHistory,
   onRename: renameSelected,
+  onDownload: downloadSelected,
+  onMoveFile: moveEntry,
 });
 
 /* ---------- Загрузка с устройства ---------- */
@@ -84,20 +86,12 @@ const uploadInput = document.getElementById("upload-input");
 const btnUpload = document.getElementById("btn-upload");
 const uploadFolderInput = document.getElementById("upload-folder-input");
 
-// Проверка поддержки загрузки папок: свойство есть и ОС не мобильная
-// (на мобильных webkitdirectory в большинстве браузеров не открывает диалог).
 const supportsFolderUpload = (() => {
   const probe = document.createElement("input");
   probe.type = "file";
   const hasProp = "webkitdirectory" in probe || "directory" in probe;
   const isMobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini/i.test(navigator.userAgent || "");
-  const result = hasProp && !isMobile;
-  console.log("[upload] supportsFolderUpload =", result, {
-    hasProp,
-    isMobile,
-    ua: navigator.userAgent,
-  });
-  return result;
+  return hasProp && !isMobile;
 })();
 
 if (btnUpload) btnUpload.addEventListener("click", () => {
@@ -107,8 +101,6 @@ if (btnUpload) btnUpload.addEventListener("click", () => {
     return;
   }
 
-  // Синхронный диалог — колбэк вызовет click() прямо внутри
-  // пользовательского нажатия, без await, чтобы не потерять user gesture.
   dialogs.choose({
     title: "Что загрузить?",
     text:
@@ -600,6 +592,50 @@ async function loadTree() {
 
 /* ---------- Режим 2: local ---------- */
 
+async function repairLegacyClone(meta, filesIndex) {
+  const key = meta.key;
+  let fixed = 0;
+
+  for (const m of filesIndex) {
+    // Если baseSha и isNew уже проставлены — файл в порядке.
+    if (m.baseSha !== undefined && m.isNew !== undefined) continue;
+
+    const entry = await storage.getFile(key, m.path);
+    if (!entry) continue;
+
+    let newSha;
+    if (entry.isBinary) {
+      newSha = await gitBlobShaFromBase64(entry.content);
+    } else {
+      newSha = await gitBlobSha(entry.content);
+    }
+
+    entry.sha = newSha;
+    entry.baseSha = newSha;
+    entry.isNew = false;
+    if (!entry.isBinary && !entry.baseContentLf) {
+      entry.baseContentLf = toLf(entry.content);
+    }
+    await storage.saveFile(key, entry);
+
+    m.sha = newSha;
+    m.baseSha = newSha;
+    m.isNew = false;
+
+    fixed++;
+  }
+
+  // Помечаем копию как обработанную — миграция идемпотентна.
+  await storage.updateRepoMeta(key, { repaired: true });
+
+  if (fixed > 0) {
+    console.log(`[repairLegacyClone] восстановлено файлов: ${fixed}`);
+    return true;
+  }
+  return false;
+}
+
+
 async function openRepoLocal(repo) {
   if (!(await confirmDiscard())) return;
   const key = storage.makeRepoKey(repo.owner.login, repo.name, repo.default_branch);
@@ -626,7 +662,17 @@ async function openRepoLocal(repo) {
 }
 
 async function enterLocalMode(repo, meta) {
-  const filesIndex = await storage.loadFilesIndex(meta.key);
+  let filesIndex = await storage.loadFilesIndex(meta.key);
+
+  // Одноразовая миграция старых копий: baseSha/isNew были не везде,
+  // из-за чего ломалось сравнение «файл изменён».
+  if (!meta.repaired) {
+    const didFix = await repairLegacyClone(meta, filesIndex);
+    if (didFix) {
+      filesIndex = await storage.loadFilesIndex(meta.key);
+      meta = { ...meta, repaired: true };
+    }
+  }
 
   try {
     const remoteHead = await checkRemoteHead(getState().octokit, {
@@ -671,10 +717,13 @@ async function enterLocalMode(repo, meta) {
     files: filesIndex.map((f) => ({
       path: f.path,
       sha: f.sha,
-      baseSha: f.baseSha,
+      // Старые копии не имели baseSha — подставляем sha, чтобы не считать
+      // файл изменённым только из-за отсутствия поля.
+      baseSha: f.baseSha !== undefined ? f.baseSha : f.sha,
       size: f.size || 0,
       isNew: !!f.isNew,
       isBinary: !!f.isBinary,
+      _movedFrom: f._movedFrom || null,
     })),
     currentPath: "",
     openFile: null,
@@ -768,19 +817,6 @@ function renderFiles() {
   const state = getState();
   const changed = new Set(state.dirty.keys());
 
-  // Диагностика: смотрим, что реально в files (только последние 3, чтобы не спамить).
-  if (state.files.length) {
-    console.log("[render] last files:",
-      state.files.slice(-3).map((f) => ({
-        path: f.path,
-        size: f.size,
-        sizeType: typeof f.size,
-        isNew: f.isNew,
-        isBinary: f.isBinary,
-      }))
-    );
-  }
-
   for (const f of state.files) {
     if (f.isNew) { changed.add(f.path); continue; }
     if (f.baseSha !== undefined && f.sha !== f.baseSha) changed.add(f.path);
@@ -802,6 +838,18 @@ function renderFiles() {
 
 function openFolder(name) {
   const { currentPath } = getState();
+
+  if (name === "..") {
+    const base = (currentPath || "").replace(/\/+$/, "");
+    if (!base) return;
+    const parts = base.split("/").filter(Boolean);
+    parts.pop();
+    const parent = parts.length ? parts.join("/") + "/" : "";
+    setState({ currentPath: parent });
+    renderFiles();
+    return;
+  }
+
   setState({ currentPath: currentPath + name + "/" });
   renderFiles();
 }
@@ -817,7 +865,6 @@ async function handleUploadSelection(e) {
     return { file, path: rel || file.name };
   });
 
-  // Сброс сразу, чтобы повторный выбор того же файла сработал.
   e.target.value = "";
 
   await processUploadedEntries(entries);
@@ -874,10 +921,8 @@ async function processUploadedEntries(entries) {
             continue;
           }
         }
-        // "replace" или "replace-all" — продолжаем и перезапишем.
       }
 
-      // Отменяем пометку удаления, если была.
       if (isDeleted) {
         removeDeleted(path);
         if (mode === "local" && cloned) {
@@ -887,7 +932,6 @@ async function processUploadedEntries(entries) {
         }
       }
 
-      // Убираем старую запись из state.files при замене.
       if (existsInFiles) {
         setState({ files: getState().files.filter((f) => f.path !== path) });
       }
@@ -944,6 +988,147 @@ function askReplace(path) {
       onDismiss: () => resolve("cancel"),
     });
   });
+}
+
+/* ---------- Перемещение drag-and-drop ---------- */
+
+async function moveEntry(srcPath, destFolderPath) {
+  const { files, deleted } = getState();
+
+  const cleanDest = (destFolderPath || "").replace(/\/+$/, "");
+
+  const isFolder = files.some((f) => f.path.startsWith(srcPath + "/"));
+  const entry = files.find((f) => f.path === srcPath);
+  if (!entry && !isFolder) return;
+
+  const base = srcPath.split("/").pop();
+  const newPath = cleanDest ? `${cleanDest}/${base}` : base;
+
+  if (newPath === srcPath) return;
+
+  if (isFolder && (newPath === srcPath || newPath.startsWith(srcPath + "/"))) {
+    await dialogs.alert({
+      title: "Нельзя переместить",
+      text: "Папку нельзя поместить внутрь самой себя",
+    });
+    return;
+  }
+
+  if (isFolder) {
+    const inside = files.filter((f) => f.path.startsWith(srcPath + "/"));
+    for (const f of inside) {
+      const candidate = newPath + f.path.slice(srcPath.length);
+      if (files.some((x) => x.path === candidate) && !deleted.has(candidate)) {
+        await dialogs.alert({
+          title: "Конфликт имён",
+          text: `Уже существует: ${candidate}`,
+        });
+        return;
+      }
+    }
+  } else {
+    if (files.some((f) => f.path === newPath) && !deleted.has(newPath)) {
+      await dialogs.alert({ title: "Уже существует", text: newPath });
+      return;
+    }
+  }
+
+  try {
+    if (isFolder) {
+      await renameFolder(srcPath, newPath);
+    } else {
+      await renameFile(srcPath, newPath);
+    }
+    renderFiles();
+    setStatus(`Перемещено: ${srcPath} → ${newPath}`);
+  } catch (e) {
+    setStatus("Ошибка перемещения: " + e.message, true);
+    console.error("moveEntry:", e);
+  }
+}
+
+/* ---------- Скачивание ---------- */
+
+async function downloadSelected() {
+  const { selection, files, mode, cloned, dirty } = getState();
+  if (!selection || selection.size === 0) return;
+
+  const paths = [...selection].filter((p) => !p.endsWith("/"));
+  if (!paths.length) {
+    await dialogs.alert({
+      title: "Нечего скачивать",
+      text: "Выбраны только папки. Скачивание папок не поддерживается.",
+    });
+    return;
+  }
+
+  progressBar.show(`Скачивание: 0 / ${paths.length}`);
+  let done = 0;
+  let failed = 0;
+
+  try {
+    for (const path of paths) {
+      done++;
+      progressBar.update(done, paths.length);
+      try {
+        const blob = await buildFileBlob(path, files, mode, cloned, dirty);
+        if (!blob) { failed++; continue; }
+        triggerDownload(blob, path.split("/").pop());
+        await new Promise((r) => setTimeout(r, 150));
+      } catch (e) {
+        console.warn("download:", path, e.message);
+        failed++;
+      }
+    }
+
+    const parts = [`Скачано: ${paths.length - failed}`];
+    if (failed) parts.push(`ошибок: ${failed}`);
+    setStatus(parts.join(" · "));
+  } finally {
+    progressBar.hide();
+  }
+}
+
+async function buildFileBlob(path, files, mode, cloned, dirty) {
+  const file = files.find((f) => f.path === path);
+  if (!file) return null;
+
+  if (mode === "local" && cloned) {
+    const entry = await storage.getFile(cloned.key, path);
+    if (!entry) return null;
+    if (entry.isBinary) {
+      return new Blob([base64ToBytes(entry.content)]);
+    }
+    return new Blob([entry.content], { type: "text/plain" });
+  }
+
+  if (file.isNew) {
+    if (file.isBinary && file.content) {
+      return new Blob([base64ToBytes(file.content)]);
+    }
+    if (dirty.has(path)) {
+      return new Blob([dirty.get(path)], { type: "text/plain" });
+    }
+    return new Blob([""]);
+  }
+
+  if (!file.sha) return null;
+  const { octokit, repo } = getState();
+  return getBlobRaw(octokit, repo.owner, repo.name, file.sha);
+}
+
+function triggerDownload(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 300);
 }
 
 /* ---------- Просмотр бинарных файлов и изображений ---------- */
@@ -1052,7 +1237,7 @@ async function handleRevertCommit(commit) {
 /* ---------- Переименование ---------- */
 
 async function renameSelected() {
-  const { selection, files, mode, cloned, deleted } = getState();
+  const { selection } = getState();
   if (!selection || selection.size !== 1) return;
 
   const sel = [...selection][0];
@@ -1089,7 +1274,7 @@ async function renameSelected() {
 }
 
 async function renameFile(oldPath, newPath) {
-  const { mode, cloned, files, octokit, repo, branch } = getState();
+  const { mode, cloned, files, octokit, repo, branch, dirty } = getState();
 
   const fileEntry = files.find((f) => f.path === oldPath);
   if (!fileEntry) return;
@@ -1099,49 +1284,169 @@ async function renameFile(oldPath, newPath) {
     return;
   }
 
-  let content = "";
+  // content — в оригинальной EOL (для отправки на GitHub и для sha).
+  // contentLf — LF-версия (для dirty и для редактора).
+  // eol — оригинальный перевод строк этого файла.
+  let content = null;
+  let contentLf = null;
+  let eol = fileEntry.eol || null;
+  let isBinary = !!fileEntry.isBinary;
+
+  // 1. Local IndexedDB — там и содержимое, и EOL уже есть.
   if (mode === "local" && cloned) {
     const entry = await storage.getFile(cloned.key, oldPath);
-    if (entry) content = entry.content;
-  } else {
-    content = getState().dirty.get(oldPath) ?? "";
-    if (!content) {
-      try {
-        content = await getFile(octokit, repo.owner, repo.name, oldPath, branch);
-      } catch (e) { console.warn("rename read:", e.message); }
+    if (entry) {
+      content = entry.content;
+      isBinary = !!entry.isBinary;
+      if (!isBinary) {
+        eol = detectEol(content) || "\n";
+        contentLf = toLf(content);
+      }
     }
   }
 
-  const size = new TextEncoder().encode(content).length;
+  // 2. Dirty — уже LF-версия.
+  if (content === null && !isBinary) {
+    const d = dirty.get(oldPath);
+    if (d !== undefined && d !== null) {
+      contentLf = d;
+      eol = eol || "\n";
+      content = fromLf(d, eol);
+    }
+  }
+
+  // 3. Новый бинарник в remote — base64 в state.
+  if (content === null && fileEntry.isNew && fileEntry.content) {
+    content = fileEntry.content;
+    isBinary = true;
+  }
+
+  // 4. Существующий файл на GitHub — тянем через API.
+  if (content === null) {
+    const ext = (oldPath.split(".").pop() || "").toLowerCase();
+    const looksBinary = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "pdf", "zip", "gz", "woff", "woff2", "ttf", "otf", "eot", "mp3", "mp4", "webm"].includes(ext);
+
+    if (looksBinary) {
+      try {
+        const blob = await getBlobRaw(octokit, repo.owner, repo.name, fileEntry.sha);
+        const buf = await blob.arrayBuffer();
+        content = bytesToBase64(new Uint8Array(buf));
+        isBinary = true;
+      } catch (e) {
+        console.warn("rename binary read:", e.message);
+        return;
+      }
+    } else {
+      try {
+        const raw = await getFile(octokit, repo.owner, repo.name, oldPath, branch);
+        eol = detectEol(raw) || "\n";
+        contentLf = toLf(raw);
+        content = fromLf(contentLf, eol); // нормализуем к оригинальному EOL
+        isBinary = false;
+      } catch (e) {
+        console.warn("rename read:", e.message);
+        return;
+      }
+    }
+  }
+
+  if (content === null) {
+    setStatus("Не удалось прочитать содержимое файла", true);
+    return;
+  }
+
+  if (!isBinary) {
+    if (!eol) eol = detectEol(content) || "\n";
+    if (contentLf === null) contentLf = toLf(content);
+  }
+
+  const size = isBinary
+    ? base64ToBytes(content).length
+    : new TextEncoder().encode(content).length;
+
+  // Исходный baseSha (для старых копий может быть undefined).
+  const originalBaseSha =
+    fileEntry.baseSha !== undefined ? fileEntry.baseSha
+    : fileEntry.isNew ? null
+    : fileEntry.sha;
+
+  const meta = {
+    path: newPath,
+    sha: null,
+    baseSha: null,
+    size,
+    isNew: true,
+    eol,
+    isBinary,
+    content: isBinary ? content : null,
+  };
+
+  const wasDeleted = getState().deleted.has(newPath);
+  const canRestore =
+    wasDeleted &&
+    fileEntry._movedFrom &&
+    fileEntry._movedFrom.path === newPath;
+
+  let restoredToOriginal = false;
+
+  if (canRestore) {
+    const currentSha = isBinary
+      ? await gitBlobShaFromBase64(content)
+      : await gitBlobSha(fromLf(contentLf, eol));
+
+    const restoredBaseSha =
+      fileEntry._movedFrom.baseSha !== undefined
+        ? fileEntry._movedFrom.baseSha
+        : fileEntry._movedFrom.sha;
+
+    meta.sha = currentSha;
+    meta.baseSha = restoredBaseSha;
+    meta.isNew = false;
+    removeDeleted(newPath);
+
+    if (currentSha === restoredBaseSha) {
+      restoredToOriginal = true;
+    }
+  } else {
+    if (wasDeleted) removeDeleted(newPath);
+    if (fileEntry._movedFrom) {
+      meta._movedFrom = fileEntry._movedFrom;
+    } else if (!fileEntry.isNew) {
+      meta._movedFrom = {
+        path: oldPath,
+        sha: fileEntry.sha,
+        baseSha: originalBaseSha,
+      };
+      setDeleted(oldPath);
+    }
+  }
 
   if (mode === "local" && cloned) {
-    const newEntry = {
-      path: newPath, content,
-      sha: null, baseSha: null,
-      baseContentLf: "", size, isNew: true,
+    const localEntry = {
+      path: newPath,
+      content,
+      sha: meta.sha,
+      baseSha: meta.baseSha,
+      baseContentLf: meta.isNew ? "" : contentLf,
+      size,
+      isNew: meta.isNew,
+      isBinary,
+      _movedFrom: meta._movedFrom || null,
     };
-    await storage.saveFile(cloned.key, newEntry);
-
+    await storage.saveFile(cloned.key, localEntry);
     if (fileEntry.isNew) {
       await storage.deleteFiles(cloned.key, [oldPath]);
     }
   }
 
   const remaining = files.filter((f) => f.path !== oldPath);
-  remaining.push({
-    path: newPath,
-    sha: null,
-    baseSha: null,
-    size,
-    isNew: true,
-    eol: fileEntry.eol || "\n",
-  });
+  remaining.push(meta);
 
   removeDirty(oldPath);
-  setDirty(newPath, toLf(content));
+  removeDirty(newPath);
 
-  if (!fileEntry.isNew) {
-    setDeleted(oldPath);
+  if (!isBinary && !restoredToOriginal) {
+    setDirty(newPath, contentLf);
   }
 
   setState({ files: remaining });
@@ -1196,7 +1501,6 @@ async function openFile(file) {
     const entry = await storage.getFile(cloned.key, file.path);
     if (!entry) { setStatus("Файл не найден в копии", true); return; }
 
-    // Даже если в state.files потерялся флаг — проверяем сам entry.
     if (entry.isBinary) {
       return openBinaryFile(file);
     }
@@ -1420,7 +1724,6 @@ async function confirmDeleteSelected() {
   const { selection, files, mode, cloned, deleted } = getState();
   if (!selection || selection.size === 0) return;
 
-  // Собираем пути, которые попадут под удаление.
   const pathsToDelete = new Set();
   for (const sel of selection) {
     if (sel.endsWith("/")) {
@@ -1432,7 +1735,6 @@ async function confirmDeleteSelected() {
     }
   }
 
-  // Сколько останется файлов после удаления (без уже удалённых и без новых).
   const remainingAfter = files.filter(
     (f) =>
       !pathsToDelete.has(f.path) &&
@@ -1655,8 +1957,6 @@ async function openCommit() {
     items.push({ path, type: "delete", baseText, currentText: "" });
   }
 
-  // Отсеиваем файлы без реальных изменений:
-  // там где база и текущая версия — одинаковые строки.
   const filtered = items.filter((it) => {
     if (it.type === "delete") return true;
     if (it.baseText === null || it.baseText === undefined) return true;
@@ -1876,7 +2176,6 @@ async function commit(message) {
           content = "";
         }
       } else {
-        // Remote: если бинарник — берём base64 из state.files.
         if (f.isBinary) {
           content = f.content || "";
           if (!content) {
@@ -1918,7 +2217,6 @@ async function commit(message) {
 
   for (const path of deleted) payload.push({ path, delete: true });
 
-  // Тот же фильтр, что и в openCommit: убираем пустые «изменения».
   const filteredPayload = payload.filter((p) => {
     if (p.delete) return true;
     if (p.content === null || p.content === undefined) return true;
@@ -1932,7 +2230,6 @@ async function commit(message) {
 
   if (filteredPayload.length === 0) { setStatus("Нет изменений"); return; }
 
-  // Дальше используем только отфильтрованный набор.
   payload.length = 0;
   payload.push(...filteredPayload);
 
@@ -1968,6 +2265,7 @@ async function commit(message) {
           p.entry.sha = sha;
           p.entry.baseSha = sha;
           p.entry.isNew = false;
+          p.entry._movedFrom = null;
           if (!p.entry.isBinary) {
             p.entry.baseContentLf = toLf(p.content);
           }
@@ -1977,7 +2275,12 @@ async function commit(message) {
           toSave.push(p.entry);
         }
         const f = files.find((x) => x.path === p.path);
-        if (f) { f.sha = sha; f.baseSha = sha; f.isNew = false; }
+        if (f) {
+          f.sha = sha;
+          f.baseSha = sha;
+          f.isNew = false;
+          f._movedFrom = null;
+        }
       }
       if (toSave.length) await storage.saveFiles(cloned.key, toSave);
 
@@ -2006,7 +2309,8 @@ async function commit(message) {
           f.sha = sha;
           f.baseSha = sha;
           f.isNew = false;
-          if (p.isBinary) f.content = null; // больше не нужен
+          f._movedFrom = null;
+          if (p.isBinary) f.content = null;
         }
         if (openFile?.path === p.path) editorScreen.updateBaseSha(sha);
         if (!p.isBinary) base.set(p.path, toLf(p.content));

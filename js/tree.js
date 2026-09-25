@@ -7,6 +7,8 @@ export function listDirectory(files, currentPath, deletedSet) {
 
   for (const f of files) {
     if (deletedSet && deletedSet.has(f.path)) continue;
+    // .gitkeep — служебный маркер пустой папки, в списке не показываем.
+    if (f.path.split("/").pop() === ".gitkeep") continue;
     if (prefix && !f.path.startsWith(prefix)) continue;
 
     const rest = f.path.slice(prefix.length);

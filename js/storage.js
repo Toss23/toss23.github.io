@@ -100,6 +100,7 @@ export async function saveFile(key, file) {
     isNew: !!file.isNew,
     isBinary: !!file.isBinary,
     size: file.size ?? byteLength(file.content),
+    _movedFrom: file._movedFrom || null,
   };
   const i = idx.findIndex((f) => f.path === file.path);
   if (i >= 0) idx[i] = meta;
@@ -119,6 +120,7 @@ export async function saveFiles(key, files) {
       isNew: !!file.isNew,
       isBinary: !!file.isBinary,
       size: file.size ?? byteLength(file.content),
+      _movedFrom: file._movedFrom || null,
     };
     const i = idx.findIndex((f) => f.path === file.path);
     if (i >= 0) idx[i] = meta;

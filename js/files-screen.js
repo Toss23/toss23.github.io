@@ -14,6 +14,8 @@ export function initFilesScreen({
   onConfirmDelete,
   onOpenHistory,
   onRename,
+  onDownload,
+  onMoveFile,
 }) {
   const list = $("entries-list");
   const breadcrumbs = $("breadcrumbs");
@@ -29,6 +31,7 @@ export function initFilesScreen({
   const btnHistory = $("btn-history");
   const btnDeleteCancel = $("btn-delete-cancel");
   const btnDeleteConfirm = $("btn-delete-confirm");
+  const btnDownload = $("btn-download");
   const deleteCount = $("delete-count");
 
   branchSelect.addEventListener("change", () => onBranchChange(branchSelect.value));
@@ -39,6 +42,60 @@ export function initFilesScreen({
   btnDeleteConfirm.addEventListener("click", () => onConfirmDelete());
   if (btnHistory) btnHistory.addEventListener("click", () => onOpenHistory());
   if (btnRename) btnRename.addEventListener("click", () => onRename());
+  if (btnDownload) btnDownload.addEventListener("click", () => onDownload());
+
+  // ----- Внутренний drag-and-drop -----
+  const INTERNAL_MIME = "application/x-internal-move";
+
+  function isInternalDrag(e) {
+    const dt = e.dataTransfer;
+    if (!dt) return false;
+    return [...(dt.types || [])].includes(INTERNAL_MIME);
+  }
+
+  function attachDraggable(li, path) {
+    li.draggable = true;
+    li.addEventListener("dragstart", (e) => {
+      e.stopPropagation();
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData(INTERNAL_MIME, path);
+      e.dataTransfer.setData("text/plain", path);
+      li.classList.add("dragging");
+    });
+    li.addEventListener("dragend", () => {
+      li.classList.remove("dragging");
+      // На всякий случай снимаем подсветку со всех drop-целей.
+      list.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
+    });
+  }
+
+  function attachDropTarget(li, destFolderPath, { allowInto = true } = {}) {
+    li.addEventListener("dragover", (e) => {
+      if (!isInternalDrag(e)) return;
+      if (!allowInto) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      li.classList.add("drop-target");
+    });
+    li.addEventListener("dragleave", (e) => {
+      if (!isInternalDrag(e)) return;
+      li.classList.remove("drop-target");
+    });
+    li.addEventListener("drop", (e) => {
+      if (!isInternalDrag(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      li.classList.remove("drop-target");
+
+      const srcPath = e.dataTransfer.getData(INTERNAL_MIME) ||
+                      e.dataTransfer.getData("text/plain");
+      if (!srcPath) return;
+
+      // Вся защита — в moveEntry. Здесь только передаём.
+      onMoveFile(srcPath, destFolderPath);
+    });
+  }
 
   function renderBreadcrumbs(currentPath) {
     clear(breadcrumbs);
@@ -51,7 +108,6 @@ export function initFilesScreen({
     }
   }
 
-  // Один проход: вес каждой папки-префикса (без удалённых).
   function computeFolderSizes(files, deletedSet) {
     const sizes = new Map();
     for (const f of files) {
@@ -67,7 +123,6 @@ export function initFilesScreen({
     return sizes;
   }
 
-  // Все папки, внутри которых что-то изменено или удалено.
   function collectChangedFolders(changedPaths, deletedSet) {
     const folders = new Set();
     const all = new Set(changedPaths);
@@ -100,18 +155,17 @@ export function initFilesScreen({
       renderBreadcrumbs(base);
       panel.classList.toggle("mode-local", mode === "local");
 
-      // Переключение между двумя панелями кнопок.
       fileActions.classList.toggle("hidden", selectionMode);
       deleteActions.classList.toggle("hidden", !selectionMode);
       branchSelect.classList.toggle("hidden", selectionMode);
       list.classList.toggle("selection-mode", selectionMode);
 
-      // Счётчик и активность кнопок удаления/переименования.
       const count = selection?.size || 0;
       if (selectionMode) {
         deleteCount.textContent = `Выбрано: ${count}`;
         btnDeleteConfirm.disabled = count === 0;
         if (btnRename) btnRename.disabled = count !== 1;
+        if (btnDownload) btnDownload.disabled = count === 0;
       }
 
       clear(branchSelect);
@@ -123,6 +177,24 @@ export function initFilesScreen({
       const folderSizes = computeFolderSizes(files, deletedSet);
       const changedFolders = collectChangedFolders(dirtyPaths, deletedSet);
       clear(list);
+
+      // Пункт "..." в родительскую папку — только если мы не в корне.
+      if (base) {
+        const parentParts = base.split("/").filter(Boolean);
+        parentParts.pop();
+        const parentPath = parentParts.length ? parentParts.join("/") : "";
+
+        const upLi = el("li", {
+          class: "entry updir",
+          title: "Назад в родительскую папку",
+          onclick: () => onOpenFolder(".."),
+        }, [
+          el("span", { class: "icon", text: "📂" }),
+          el("span", { class: "name", text: "..." }),
+        ]);
+        attachDropTarget(upLi, parentPath);
+        list.appendChild(upLi);
+      }
 
       for (const name of folders) {
         const fullPath = base ? base + "/" + name : name;
@@ -172,6 +244,13 @@ export function initFilesScreen({
         if (selectionMode && selection?.has(fullPath + "/")) {
           li.classList.add("selected");
         }
+
+        // Папку тоже можно тащить (для перемещения).
+        if (!selectionMode) {
+          attachDraggable(li, fullPath);
+          attachDropTarget(li, fullPath);
+        }
+
         list.appendChild(li);
       }
 
@@ -209,10 +288,7 @@ export function initFilesScreen({
           }));
         }
 
-        children.push(el("span", {
-          class: "size",
-          text: formatSize(typeof f.size === "number" ? f.size : 0),
-        }));
+        children.push(el("span", { class: "size", text: formatSize(f.size || 0) }));
 
         const li = el("li", {
           class: "entry file",
@@ -224,10 +300,15 @@ export function initFilesScreen({
 
         if (dirtyPaths.has(f.path)) li.classList.add("dirty");
         if (selectionMode && selection?.has(f.path)) li.classList.add("selected");
+
+        if (!selectionMode) attachDraggable(li, f.path);
+
         list.appendChild(li);
       }
 
-      if (!folders.length && !filesHere.length) {
+      if (!base && !folders.length && !filesHere.length) {
+        list.appendChild(el("li", { class: "empty", text: "Пусто" }));
+      } else if (base && !folders.length && !filesHere.length) {
         list.appendChild(el("li", { class: "empty", text: "Пусто" }));
       }
     },
