@@ -74,8 +74,8 @@ const filesScreen = initFilesScreen({
   onOpenFolder: openFolder,
   onOpenFile: openFile,
   onBranchChange: selectBranch,
-  onCreateFile: createFile,
-  onCreateFolder: createFolder,
+  onCreateMenu: openCreateMenu,
+  onMoreMenu: openMoreMenu,
   onEnterSelection: enterSelection,
   onCancelSelection: cancelSelection,
   onToggleSelect: (path) => {
@@ -111,7 +111,7 @@ const supportsFolderUpload = (() => {
   return hasProp && !isMobile;
 })();
 
-if (btnUpload) btnUpload.addEventListener("click", () => {
+function openUploadDialog() {
   if (!supportsFolderUpload) {
     uploadInput.value = "";
     uploadInput.click();
@@ -141,7 +141,37 @@ if (btnUpload) btnUpload.addEventListener("click", () => {
       },
     ],
   });
-});
+}
+
+function openCreateMenu() {
+  const { mode } = getState();
+  if (!mode) return;
+  dialogs.choose({
+    title: "Создать",
+    options: [
+      { text: "📄 Создать файл", onClick: () => createFile() },
+      { text: "📁 Создать папку", onClick: () => createFolder() },
+      { text: "📤 Загрузить", kind: "primary", onClick: () => openUploadDialog() },
+    ],
+  });
+}
+
+function openMoreMenu() {
+  const { mode, files } = getState();
+  if (!mode) return;
+  dialogs.choose({
+    title: "Другое",
+    options: [
+      {
+        text: "📦 Скачать архив (ZIP)",
+        onClick: () => {
+          if (!files.length) return;
+          downloadRepoZip();
+        },
+      },
+    ],
+  });
+}
 
 if (uploadInput) uploadInput.addEventListener("change", handleUploadSelection);
 if (uploadFolderInput) uploadFolderInput.addEventListener("change", handleUploadSelection);
@@ -161,14 +191,7 @@ const aiModal = initAiModal({
   onGenerateFullInstructions: handleGenerateFullInstructions,
 });
 
-const btnDownloadZip = document.getElementById("btn-download-zip");
-if (btnDownloadZip) {
-  btnDownloadZip.addEventListener("click", () => {
-    const { mode, files } = getState();
-    if (!mode || !files.length) return;
-    downloadRepoZip();
-  });
-}
+
 
 const btnAi = document.getElementById("btn-ai");
 if (btnAi) {

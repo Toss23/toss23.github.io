@@ -15,8 +15,8 @@ export function initFilesScreen({
   onOpenFolder,
   onOpenFile,
   onBranchChange,
-  onCreateFile,
-  onCreateFolder,
+  onCreateMenu,
+  onMoreMenu,
   onEnterSelection,
   onCancelSelection,
   onToggleSelect,
@@ -35,8 +35,8 @@ export function initFilesScreen({
 
   const fileActions = $("file-actions");
   const deleteActions = $("delete-actions");
-  const btnNewFile = $("btn-new-file");
-  const btnNewFolder = $("btn-new-folder");
+  const btnCreate = $("btn-create");
+  const btnMore = $("btn-more");
   const btnDeleteMode = $("btn-delete-mode");
   const btnRename = $("btn-rename");
   const btnMove = $("btn-move");
@@ -49,8 +49,8 @@ export function initFilesScreen({
   let suppressClickUntil = 0;
 
   branchSelect.addEventListener("change", () => onBranchChange(branchSelect.value));
-  btnNewFile.addEventListener("click", () => onCreateFile());
-  btnNewFolder.addEventListener("click", () => onCreateFolder());
+  if (btnCreate) btnCreate.addEventListener("click", () => onCreateMenu && onCreateMenu());
+  if (btnMore) btnMore.addEventListener("click", () => onMoreMenu && onMoreMenu());
   btnDeleteMode.addEventListener("click", () => onEnterSelection());
   btnDeleteCancel.addEventListener("click", () => onCancelSelection());
   btnDeleteConfirm.addEventListener("click", () => onConfirmDelete());
