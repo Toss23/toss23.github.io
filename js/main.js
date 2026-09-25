@@ -1338,15 +1338,7 @@ async function confirmDeleteSelected() {
   const { selection, files, mode, cloned, deleted } = getState();
   if (!selection || selection.size === 0) return;
 
-  const ok = await dialogs.confirm({
-    title: "Удалить выбранное?",
-    text: `Элементов: ${selection.size}. Файлы и папки будут помечены на удаление при коммите.`,
-    okText: "Удалить",
-    cancelText: "Отмена",
-    danger: true,
-  });
-  if (!ok) return;
-
+  // Собираем пути, которые попадут под удаление.
   const pathsToDelete = new Set();
   for (const sel of selection) {
     if (sel.endsWith("/")) {
@@ -1357,6 +1349,34 @@ async function confirmDeleteSelected() {
       pathsToDelete.add(sel);
     }
   }
+
+  // Сколько останется файлов после удаления (без уже удалённых и без новых).
+  const remainingAfter = files.filter(
+    (f) =>
+      !pathsToDelete.has(f.path) &&
+      !deleted.has(f.path) &&
+      !f.isNew
+  ).length;
+
+  if (remainingAfter === 0) {
+    await dialogs.alert({
+      title: "Нельзя удалить все файлы",
+      text:
+        "GitHub не позволяет создать коммит без единого файла в дереве.\n\n" +
+        "Оставьте хотя бы один файл — например, README.md. " +
+        "Остальные можно удалить.",
+    });
+    return;
+  }
+
+  const ok = await dialogs.confirm({
+    title: "Удалить выбранное?",
+    text: `Элементов: ${selection.size}. Файлы и папки будут помечены на удаление при коммите.`,
+    okText: "Удалить",
+    cancelText: "Отмена",
+    danger: true,
+  });
+  if (!ok) return;
 
   const remaining = [];
   const newDeletes = new Set(deleted);
@@ -1803,6 +1823,7 @@ async function commit(message) {
 
   commitScreen.setBusy(true);
   setStatus("Коммит...");
+  progressBar.show(`Коммит: 0 / ${payload.length + 3}`);
   try {
     const newHeadSha = await commitFiles(octokit, {
       owner: repo.owner, repo: repo.name, branch, message,
@@ -1812,6 +1833,13 @@ async function commit(message) {
         delete: p.delete,
         isBinary: p.isBinary,
       })),
+      onProgress: (done, total, label) => {
+        progressBar.update(done, total);
+        if (label) {
+          const el = document.getElementById("progress-label");
+          if (el) el.textContent = `${done} / ${total} · ${label}`;
+        }
+      },
     });
 
     if (mode === "local" && cloned) {
@@ -1881,6 +1909,7 @@ async function commit(message) {
   } catch (e) {
     setStatus("Ошибка коммита: " + e.message, true);
   } finally {
+    progressBar.hide();
     commitScreen.setBusy(false);
   }
 }
