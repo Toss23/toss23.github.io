@@ -1,7 +1,7 @@
 import { EditorView, basicSetup } from "https://esm.sh/codemirror@6";
 import { EditorState } from "https://esm.sh/@codemirror/state@6";
 import { syntaxHighlighting } from "https://esm.sh/@codemirror/language@6";
-import { csharp } from "https://esm.sh/@codemirror/lang-csharp@6";
+import { csharp } from \"https://esm.sh/@replit/codemirror-lang-csharp@6\";;
 import { csharpHighlightStyle, csharpEditorTheme } from "@core/csharp-theme.js";
 import { $ } from "@core/dom.js";
 import { UI } from "@core/config.js";
