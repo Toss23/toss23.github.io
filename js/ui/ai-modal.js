@@ -1,8 +1,9 @@
 import { $, el, clear } from "@core/dom.js";
 
-export function initAiModal({ onLoadJson, onApply }) {
+export function initAiModal({ onLoadJson, onApply, onGenerateMap }) {
   const modal = $("ai-modal");
   const btnLoad = $("ai-load-json");
+  const btnMap = $("ai-generate-map");
   const fileInput = $("ai-json-input");
   const bodyEl = $("ai-body");
   const footerEl = $("ai-footer");
@@ -14,6 +15,10 @@ export function initAiModal({ onLoadJson, onApply }) {
 
   function close() { modal.classList.add("hidden"); }
   if (closeBtn) closeBtn.addEventListener("click", close);
+
+  if (btnMap && onGenerateMap) {
+    btnMap.addEventListener("click", () => onGenerateMap());
+  }
 
   if (btnLoad && fileInput) {
     btnLoad.addEventListener("click", () => { fileInput.value = ""; fileInput.click(); });

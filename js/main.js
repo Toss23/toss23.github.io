@@ -34,6 +34,7 @@ import { initRepoActionsModal } from "@ui/repo-actions-modal.js";
 import { initUpdateModal } from "@ui/update-modal.js";
 import { initAiModal } from "@ui/ai-modal.js";
 import { parseJson, checkChange, applyChange } from "@api/ai-patches.js";
+import { parseFile, renderProjectMap } from "@api/project-map.js";
 
 import { initAuthScreen } from "@screens/auth-screen.js";
 import { initReposScreen } from "@screens/repos-screen.js";
@@ -155,6 +156,7 @@ const dropZone = initDropZone({
 const aiModal = initAiModal({
   onLoadJson: handleAiJsonLoad,
   onApply: handleAiApply,
+  onGenerateMap: handleGenerateProjectMap,
 });
 
 const btnAi = document.getElementById("btn-ai");
@@ -1077,6 +1079,68 @@ function askReplace(path) {
 }
 
 /* ---------- AI-патчи ---------- */
+
+async function handleGenerateProjectMap() {
+  const { mode, files, repo, branch } = getState();
+  if (!files.length) {
+    await dialogs.alert({
+      title: "Пустой репозиторий",
+      text: "Нет файлов для анализа.",
+    });
+    return;
+  }
+
+  showBusy("Генерация карты проекта…");
+  progressBar.show("Чтение файлов: 0 / " + files.length);
+  try {
+    const result = [];
+    let done = 0;
+    for (const f of files) {
+      progressBar.update(done, files.length);
+      updateBusyText("Обработка: " + f.path);
+      try {
+        const content = await getCurrentFileContent(f.path);
+        const text = (content === null || (content && content.binary)) ? "" : content;
+        const r = parseFile(f.path, text);
+        r.size = f.size || 0;
+        result.push(r);
+      } catch (e) {
+        console.warn("map:", f.path, e.message);
+        result.push({ path: f.path, size: f.size || 0, kind: "other", parsed: null });
+      }
+      done++;
+    }
+    progressBar.update(done, files.length);
+
+    const md = renderProjectMap({
+      repoLabel: repo?.fullName || "",
+      branch: branch || "",
+      mode: mode || "",
+      files: result,
+    });
+
+    const blob = new Blob([md], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "project-map.md";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 300);
+
+    setStatus("Карта проекта скачана");
+  } catch (e) {
+    setStatus("Ошибка генерации: " + e.message, true);
+  } finally {
+    forceHideBusy();
+    progressBar.hide();
+  }
+}
+
 
 async function getCurrentFileContent(path) {
   const { octokit, repo, branch, dirty, mode, cloned, files, deleted } = getState();
