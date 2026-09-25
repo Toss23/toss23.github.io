@@ -1,3 +1,8 @@
+function normalizeText(s) {
+  if (typeof s !== "string") return s;
+  return s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 export function parseJson(text) {
   let data;
   try {
@@ -16,7 +21,11 @@ export function parseJson(text) {
   const out = [];
   changes.forEach((c, i) => {
     const norm = normalizeChange(c, i);
-    if (norm) out.push(norm);
+    if (norm) {
+      if (typeof norm.find === "string") norm.find = normalizeText(norm.find);
+      if (typeof norm.replace === "string") norm.replace = normalizeText(norm.replace);
+      out.push(norm);
+    }
   });
 
   if (!out.length) throw new Error("Нет валидных операций в 'changes'");
@@ -50,6 +59,9 @@ function normalizeChange(c, index) {
  *   - null — файла нет
  */
 export function checkChange(change, currentContent) {
+  if (currentContent && typeof currentContent === "string") {
+    currentContent = normalizeText(currentContent);
+  }
   const type = change.type;
 
   if (type === "delete") {
@@ -126,6 +138,9 @@ function countOccurrences(haystack, needle) {
 }
 
 export function applyChange(change, currentContent) {
+  if (currentContent && typeof currentContent === "string") {
+    currentContent = normalizeText(currentContent);
+  }
   const type = change.type;
   if (type === "delete") return { delete: true };
   if (type === "create" || type === "fullContent") return { content: change.content };
