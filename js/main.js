@@ -17,6 +17,7 @@ import {
 } from "@api/github.js";
 import { commitFiles } from "@api/commit.js";
 import { readUploadedFile, saveUploadedEntry } from "@api/upload.js";
+import { buildRepoZip } from "@api/download-zip.js";
 import { cloneRepo, checkRemoteHead } from "@api/clone.js";
 import { pullRepo } from "@api/pull.js";
 import { revertCommit } from "@api/revert.js";
@@ -182,6 +183,7 @@ const repoActionsModal = initRepoActionsModal({
   onOpenLocal: openRepoLocal,
   onClone: cloneAndOpen,
   onDeleteLocal: deleteLocalCopy,
+  onDownloadZip: downloadRepoZip,
   dialogs,
 });
 const updateModal = initUpdateModal({
@@ -1475,6 +1477,52 @@ async function moveSelected() {
 }
 
 /* ---------- Скачивание ---------- */
+
+async function downloadRepoZip() {
+  const { octokit, repo, branch, mode, cloned, files, dirty, deleted } = getState();
+  if (!repo || !files.length) {
+    await dialogs.alert({
+      title: "Нечего скачивать",
+      text: "В репозитории нет файлов.",
+    });
+    return;
+  }
+
+  const zipName = repo.name + "-" + branch + ".zip";
+  showBusy("Формирование архива…");
+  progressBar.show("Архивация: 0 / " + files.length);
+  try {
+    const blob = await buildRepoZip({
+      octokit, owner: repo.owner, name: repo.name, branch,
+      mode, cloned, files, dirty, deleted,
+      onProgress: (done, total, path) => {
+        progressBar.update(done, total);
+        updateBusyText("Архивация: " + done + " / " + total + " — " + path);
+      },
+    });
+    downloadBlob(blob, zipName);
+    setStatus("Архив скачан: " + zipName);
+  } catch (e) {
+    setStatus("Ошибка архивации: " + e.message, true);
+  } finally {
+    forceHideBusy();
+    progressBar.hide();
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 300);
+}
 
 async function downloadSelected() {
   const { selection, files, mode, cloned, dirty } = getState();

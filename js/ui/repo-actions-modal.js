@@ -2,7 +2,7 @@ import { $ } from "@core/dom.js";
 import { formatSize } from "@core/format.js";
 
 export function initRepoActionsModal({
-  onOpenRemote, onOpenLocal, onClone, onDeleteLocal, dialogs,
+  onOpenRemote, onOpenLocal, onClone, onDeleteLocal, onDownloadZip, dialogs,
 }) {
   const modal = $("repo-actions-modal");
   const title = $("repo-actions-title");
@@ -10,6 +10,7 @@ export function initRepoActionsModal({
   const btnLocal = $("repo-actions-local");
   const btnClone = $("repo-actions-clone");
   const btnDelete = $("repo-actions-delete");
+  const btnZip = $("repo-actions-zip");
   const btnCancel = $("repo-actions-cancel");
   const sizeInfo = $("clone-size-info");
   const sizeFill = $("clone-size-fill");
@@ -30,6 +31,11 @@ export function initRepoActionsModal({
     current && onClone(current);
   });
   btnCancel.addEventListener("click", () => modal.classList.add("hidden"));
+
+  if (btnZip) btnZip.addEventListener("click", () => {
+    modal.classList.add("hidden");
+    current && onDownloadZip && onDownloadZip(current);
+  });
 
   btnDelete.addEventListener("click", async () => {
     if (!current) return;
