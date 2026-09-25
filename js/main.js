@@ -759,6 +759,19 @@ function renderFiles() {
   const state = getState();
   const changed = new Set(state.dirty.keys());
 
+  // Диагностика: смотрим, что реально в files (только последние 3, чтобы не спамить).
+  if (state.files.length) {
+    console.log("[render] last files:",
+      state.files.slice(-3).map((f) => ({
+        path: f.path,
+        size: f.size,
+        sizeType: typeof f.size,
+        isNew: f.isNew,
+        isBinary: f.isBinary,
+      }))
+    );
+  }
+
   for (const f of state.files) {
     if (f.isNew) { changed.add(f.path); continue; }
     if (f.baseSha !== undefined && f.sha !== f.baseSha) changed.add(f.path);
@@ -828,9 +841,15 @@ async function handleUploadSelection(e) {
       }
 
       const data = await readUploadedFile(file);
+      console.log("[upload] parsed", path, {
+        isBinary: data.isBinary,
+        size: data.size,
+        sizeType: typeof data.size,
+        contentLength: data.content.length,
+      });
       await saveUploadedEntry({ mode, cloned, path, data });
 
-      added.push({
+      const entryForList = {
         path,
         sha: null,
         baseSha: null,
@@ -838,7 +857,11 @@ async function handleUploadSelection(e) {
         isNew: true,
         isBinary: data.isBinary,
         eol: "\n",
-      });
+        // Держим содержимое binary-файла прямо в state.files,
+        // иначе в remote-режиме оно потеряется до коммита.
+        content: data.isBinary ? data.content : null,
+      };
+      added.push(entryForList);
 
       done++;
       progressBar.update(done, selected.length);
@@ -1123,6 +1146,16 @@ async function openFile(file) {
   if (mode === "local" && cloned) {
     const entry = await storage.getFile(cloned.key, file.path);
     if (!entry) { setStatus("Файл не найден в копии", true); return; }
+
+    // Даже если в state.files потерялся флаг — проверяем сам entry.
+    if (entry.isBinary) {
+      return openBinaryFile(file);
+    }
+    if (entry.content === undefined || entry.content === null) {
+      setStatus("Файл пуст или повреждён", true);
+      return;
+    }
+
     eol = detectEol(entry.content);
     baseSha = entry.baseSha;
     contentLf = dirty.has(file.path) ? dirty.get(file.path) : toLf(entry.content);
@@ -1573,8 +1606,17 @@ async function openCommit() {
     items.push({ path, type: "delete", baseText, currentText: "" });
   }
 
-  if (items.length === 0) { setStatus("Нет изменений"); return; }
-  commitScreen.open(items, { mode });
+  // Отсеиваем файлы без реальных изменений:
+  // там где база и текущая версия — одинаковые строки.
+  const filtered = items.filter((it) => {
+    if (it.type === "delete") return true;
+    if (it.baseText === null || it.baseText === undefined) return true;
+    if (it.currentText === null || it.currentText === undefined) return true;
+    return it.baseText !== it.currentText;
+  });
+
+  if (filtered.length === 0) { setStatus("Нет изменений"); return; }
+  commitScreen.open(filtered, { mode });
 }
 
 /* ---------- Проверка устаревшей базы ---------- */
@@ -1785,7 +1827,15 @@ async function commit(message) {
           content = "";
         }
       } else {
-        content = dirty.has(f.path) ? fromLf(dirty.get(f.path), f.eol || "\n") : "";
+        // Remote: если бинарник — берём base64 из state.files.
+        if (f.isBinary) {
+          content = f.content || "";
+          if (!content) {
+            console.warn("Бинарный файл без содержимого:", f.path);
+          }
+        } else {
+          content = dirty.has(f.path) ? fromLf(dirty.get(f.path), f.eol || "\n") : "";
+        }
       }
       payload.push({ path: f.path, content, isNew: true, entry, isBinary });
       usedPaths.add(f.path);
@@ -1819,7 +1869,23 @@ async function commit(message) {
 
   for (const path of deleted) payload.push({ path, delete: true });
 
-  if (payload.length === 0) { setStatus("Нет изменений"); return; }
+  // Тот же фильтр, что и в openCommit: убираем пустые «изменения».
+  const filteredPayload = payload.filter((p) => {
+    if (p.delete) return true;
+    if (p.content === null || p.content === undefined) return true;
+    if (p.isNew) return true;
+    const baseText = p.entry
+      ? (p.entry.baseContentLf ?? "")
+      : (base.has(p.path) ? base.get(p.path) : null);
+    if (baseText === null) return true;
+    return baseText !== p.content;
+  });
+
+  if (filteredPayload.length === 0) { setStatus("Нет изменений"); return; }
+
+  // Дальше используем только отфильтрованный набор.
+  payload.length = 0;
+  payload.push(...filteredPayload);
 
   commitScreen.setBusy(true);
   setStatus("Коммит...");
@@ -1887,7 +1953,12 @@ async function commit(message) {
           ? await gitBlobShaFromBase64(p.content)
           : await gitBlobSha(p.content);
         const f = files.find((x) => x.path === p.path);
-        if (f) { f.sha = sha; f.baseSha = sha; f.isNew = false; }
+        if (f) {
+          f.sha = sha;
+          f.baseSha = sha;
+          f.isNew = false;
+          if (p.isBinary) f.content = null; // больше не нужен
+        }
         if (openFile?.path === p.path) editorScreen.updateBaseSha(sha);
         if (!p.isBinary) base.set(p.path, toLf(p.content));
       }

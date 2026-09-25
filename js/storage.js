@@ -98,6 +98,7 @@ export async function saveFile(key, file) {
     sha: file.sha,
     baseSha: file.baseSha !== undefined ? file.baseSha : file.sha,
     isNew: !!file.isNew,
+    isBinary: !!file.isBinary,
     size: file.size ?? byteLength(file.content),
   };
   const i = idx.findIndex((f) => f.path === file.path);
@@ -116,6 +117,7 @@ export async function saveFiles(key, files) {
       sha: file.sha,
       baseSha: file.baseSha !== undefined ? file.baseSha : file.sha,
       isNew: !!file.isNew,
+      isBinary: !!file.isBinary,
       size: file.size ?? byteLength(file.content),
     };
     const i = idx.findIndex((f) => f.path === file.path);

@@ -45,15 +45,28 @@ export function base64ToBytes(b64) {
   return bytes;
 }
 
+// Эвристика «текст или бинарник» без падения на невалидном UTF-8.
+// Считаем долю «печатных» байтов (ASCII + многобайтовый UTF-8, TAB/LF/CR).
+// Если меньше 90% — считаем бинарником. Нули (>1%) — точно бинарник.
 export function isProbablyText(bytes) {
   const sample = bytes.slice(0, Math.min(8192, bytes.length));
+  if (sample.length === 0) return true;
+
+  let nulCount = 0;
+  let printable = 0;
+
   for (let i = 0; i < sample.length; i++) {
-    if (sample[i] === 0) return false;
+    const b = sample[i];
+    if (b === 0) { nulCount++; continue; }
+    if (
+      b === 9 || b === 10 || b === 13 ||               // TAB, LF, CR
+      (b >= 0x20 && b <= 0x7e) ||                       // ASCII printable
+      b >= 0x80                                         // любой байт многобайтового UTF-8
+    ) {
+      printable++;
+    }
   }
-  try {
-    new TextDecoder("utf-8", { fatal: true }).decode(sample);
-    return true;
-  } catch {
-    return false;
-  }
+
+  if (nulCount / sample.length > 0.01) return false;
+  return printable / sample.length >= 0.9;
 }

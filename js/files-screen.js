@@ -209,7 +209,10 @@ export function initFilesScreen({
           }));
         }
 
-        children.push(el("span", { class: "size", text: formatSize(f.size || 0) }));
+        children.push(el("span", {
+          class: "size",
+          text: formatSize(typeof f.size === "number" ? f.size : 0),
+        }));
 
         const li = el("li", {
           class: "entry file",
