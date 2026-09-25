@@ -417,8 +417,8 @@ body {
 /* Токены подсветки C# (Darcula / Rider) */
 .tok-keyword { color: #CC7832; }
 .tok-control { color: #CC7832; }
-.tok-type { color: #D4DCE8; }
-.tok-interface { color: #EEF2FA; }
+.tok-type { color: #B5CEA8; }
+.tok-interface { color: #D0EAC8; }
 .tok-attribute { color: #BBB529; }
 .tok-method { color: #FFC66D; }
 .tok-arg { color: #C586C0; }
