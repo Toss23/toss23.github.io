@@ -158,6 +158,7 @@ const aiModal = initAiModal({
   onLoadJson: handleAiJsonLoad,
   onApply: handleAiApply,
   onGenerateMap: handleGenerateProjectMap,
+  onGenerateFullInstructions: handleGenerateFullInstructions,
 });
 
 const btnAi = document.getElementById("btn-ai");
@@ -1150,6 +1151,78 @@ function downloadText(filename, text, mime = "text/markdown;charset=utf-8") {
   }, 300);
 }
 
+
+async function handleGenerateFullInstructions() {
+  const { mode, files, repo, branch } = getState();
+  if (!files.length) {
+    await dialogs.alert({ title: "Пустой репозиторий", text: "Нет файлов для анализа." });
+    return;
+  }
+
+  showBusy("Формирование полной инструкции…");
+  progressBar.show("Чтение файлов: 0 / " + files.length);
+  try {
+    const result = [];
+    let done = 0;
+    for (const f of files) {
+      progressBar.update(done, files.length);
+      updateBusyText("Обработка: " + f.path);
+      try {
+        const content = await getCurrentFileContent(f.path);
+        const text = (content === null || (content && content.binary)) ? "" : content;
+        const r = parseFile(f.path, text);
+        r.size = f.size || 0;
+        result.push(r);
+      } catch (e) {
+        result.push({ path: f.path, size: f.size || 0, kind: "other", parsed: null });
+      }
+      done++;
+    }
+    progressBar.update(done, files.length);
+
+    const mapMd = renderProjectMap({
+      repoLabel: repo?.fullName || "",
+      branch: branch || "",
+      mode: mode || "",
+      files: result,
+    });
+
+    let instText = "";
+    try {
+      const res = await fetch("./ai-instructions.md", { cache: "no-store" });
+      if (res.ok) instText = await res.text();
+      else instText = "_(ai-instructions.md не найден: HTTP " + res.status + ")_";
+    } catch (e) {
+      instText = "_(ai-instructions.md не прочитан: " + e.message + ")_";
+    }
+
+    const header =
+      "# Полная инструкция для AI\n\n" +
+      "Этот файл объединяет:\n" +
+      "1. Формат JSON-патчей, который принимает приложение.\n" +
+      "2. Карту проекта — структуру, импорты, экспорты.\n" +
+      "3. Правила работы с проектом.\n\n" +
+      "---\n\n";
+
+    const full =
+      header +
+      "## Часть 1. Формат JSON-патчей\n\n" +
+      instText +
+      "\n\n---\n\n" +
+      "## Часть 2. Карта проекта\n\n" +
+      mapMd;
+
+    setTimeout(() => {
+      aiModal.openMapPreview(full, () => downloadText("ai-full-instructions.md", full));
+    }, 0);
+    setStatus("Полная инструкция готова");
+  } catch (e) {
+    setStatus("Ошибка: " + e.message, true);
+  } finally {
+    forceHideBusy();
+    progressBar.hide();
+  }
+}
 
 async function getCurrentFileContent(path) {
   const { octokit, repo, branch, dirty, mode, cloned, files, deleted } = getState();

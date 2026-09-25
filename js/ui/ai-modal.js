@@ -1,9 +1,10 @@
 import { $, el, clear } from "@core/dom.js";
 
-export function initAiModal({ onLoadJson, onApply, onGenerateMap }) {
+export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFullInstructions }) {
   const modal = $("ai-modal");
   const btnLoad = $("ai-load-json");
   const btnMap = $("ai-generate-map");
+  const btnFull = $("ai-generate-full");
   const fileInput = $("ai-json-input");
   const bodyEl = $("ai-body");
   const footerEl = $("ai-footer");
@@ -43,6 +44,10 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap }) {
 
   if (btnMap && onGenerateMap) {
     btnMap.addEventListener("click", () => onGenerateMap());
+  }
+
+  if (btnFull && onGenerateFullInstructions) {
+    btnFull.addEventListener("click", () => onGenerateFullInstructions());
   }
 
   if (btnLoad && fileInput) {
