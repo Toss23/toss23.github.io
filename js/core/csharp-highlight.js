@@ -442,19 +442,41 @@ function processClassMember(tokens, idxs, map) {
 
 function applyClassMembers(tokens, memberMap) {
   if (!memberMap || memberMap.size === 0) return;
-  for (let k = 0; k < tokens.length; k++) {
+  const n = tokens.length;
+  const TYPE_CTX = new Set([
+    "new","typeof","is","as","event","class","struct","interface",
+    "enum","delegate","where"
+  ]);
+
+  for (let k = 0; k < n; k++) {
     const t = tokens[k];
     if (t.type !== "ident" && t.type !== "type") continue;
     if (!memberMap.has(t.text)) continue;
 
+    // Предыдущий значимый токен
     let p = k - 1;
     while (p >= 0 && (tokens[p].type === "ws" || tokens[p].type === "comment")) p--;
-    if (p >= 0 && tokens[p].type === "op" && tokens[p].text === ".") continue;
+    const prev = p >= 0 ? tokens[p] : null;
 
-    // Если токен — часть объявления метода (перед ним был метод)
+    // После точки — свойство чужого объекта, не наше.
+    if (prev && prev.type === "op" && prev.text === ".") continue;
+
+    // После модификатора или в контексте типа — это объявление типа, не значение.
+    if (prev && prev.type === "keyword") {
+      if (MODIFIERS.has(prev.text)) continue;
+      if (TYPE_CTX.has(prev.text)) continue;
+    }
+
+    // Следующий значимый токен
     let nx = k + 1;
-    while (nx < tokens.length && (tokens[nx].type === "ws" || tokens[nx].type === "comment")) nx++;
-    if (nx < tokens.length && tokens[nx].type === "op" && tokens[nx].text === "(") continue;
+    while (nx < n && (tokens[nx].type === "ws" || tokens[nx].type === "comment")) nx++;
+    const next = nx < n ? tokens[nx] : null;
+
+    // Вызов метода или объявление метода — не наше.
+    if (next && next.type === "op" && next.text === "(") continue;
+
+    // Следующий — идентификатор/тип, значит мы сами тип в объявлении `Type Name`.
+    if (next && (next.type === "ident" || next.type === "type")) continue;
 
     t.type = memberMap.get(t.text);
   }
