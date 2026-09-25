@@ -9,13 +9,14 @@ const KEYWORDS = new Set([
   "short", "sizeof", "stackalloc", "static", "string", "struct", "switch",
   "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked",
   "unsafe", "ushort", "using", "virtual", "void", "volatile", "while",
-  "record", "init", "required", "with", "global", "file",
+  "record", "init", "required", "with", "global", "file", "async", "await",
+  "yield", "get", "set", "value",
 ]);
 
 const CONTROL_KEYWORDS = new Set([
   "if", "else", "for", "foreach", "while", "do", "switch", "case",
   "default", "break", "continue", "return", "goto", "throw", "try",
-  "catch", "finally", "yield",
+  "catch", "finally", "yield", "await",
 ]);
 
 const TYPE_KEYWORDS = new Set([
@@ -26,7 +27,7 @@ const TYPE_KEYWORDS = new Set([
 
 const TYPE_AFTER = new Set([
   "new", "typeof", "nameof", "using", "is", "as", "sizeof", "default",
-  "in", "out", "ref", "stackalloc",
+  "in", "out", "ref", "stackalloc", "override", "virtual",
 ]);
 
 function isIdentStart(c) {
@@ -199,7 +200,7 @@ export function tokenize(code) {
     i += op.length;
   }
 
-  // Второй проход: контекстная подсказка типов и методов.
+  // Второй проход: типы, методы, статические классы.
   for (let k = 0; k < tokens.length; k++) {
     const t = tokens[k];
     if (t.type !== "ident") continue;
@@ -212,18 +213,26 @@ export function tokenize(code) {
     const prev = p >= 0 ? tokens[p] : null;
     const next = nx < tokens.length ? tokens[nx] : null;
 
-    if (prev && prev.type === "keyword" && TYPE_AFTER.has(prev.text)) {
-      t.type = "type";
-      continue;
-    }
+    // Метод: идентификатор перед скобкой
     if (next && next.text === "(") {
       t.type = "method";
       continue;
     }
+
+    // После точки: заглавная — тип (Console в Console.WriteLine),
+    // строчная — свойство/поле, оставляем нейтральным.
     if (prev && prev.type === "op" && prev.text === ".") {
-      // после точки — свойство, оставим нейтральным
+      if (/^[A-Z]/.test(t.text)) t.type = "type";
       continue;
     }
+
+    // После new/typeof/override/etc — точно тип
+    if (prev && prev.type === "keyword" && TYPE_AFTER.has(prev.text)) {
+      t.type = "type";
+      continue;
+    }
+
+    // Заглавная — тип (класс, интерфейс, структура, enum)
     if (/^[A-Z][A-Za-z0-9_]*$/.test(t.text)) {
       t.type = "type";
       continue;

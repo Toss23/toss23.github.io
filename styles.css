@@ -339,44 +339,69 @@ body {
   font-family: ui-monospace, monospace;
   color: #7db0f0;
 }
-.editor-slider {
-  -webkit-appearance: none;
-  appearance: none;
+/* Слайдер размера шрифта — сброс всех общих стилей для input */
+#editor-font-size {
+  -webkit-appearance: none !important;
+  appearance: none !important;
   width: 100%;
   height: 6px;
-  background: #1e1e1e;
+  background: #1e1e1e !important;
+  border: 1px solid #3c3c3c !important;
   border-radius: 3px;
   outline: none;
-  border: 1px solid #3c3c3c;
+  padding: 0 !important;
+  min-height: 0 !important;
+  margin: 12px 0 4px;
   box-sizing: border-box;
-  padding: 0;
+  display: block;
+  cursor: pointer;
 }
-.editor-slider::-webkit-slider-thumb {
+
+#editor-font-size::-webkit-slider-runnable-track {
+  -webkit-appearance: none;
+  height: 6px;
+  background: transparent;
+  border: none;
+}
+
+#editor-font-size::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: #0e639c;
   cursor: pointer;
   border: 2px solid #1e1e1e;
   box-sizing: border-box;
+  margin-top: -9px;
+  transition: background 0.15s ease;
 }
-.editor-slider::-webkit-slider-thumb:hover { background: #1177bb; }
-.editor-slider::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #0e639c;
-  cursor: pointer;
-  border: 2px solid #1e1e1e;
-  box-sizing: border-box;
-}
-.editor-slider::-moz-range-track {
+#editor-font-size::-webkit-slider-thumb:hover { background: #1177bb; }
+#editor-font-size::-webkit-slider-thumb:active { background: #4ea1f3; }
+
+#editor-font-size::-moz-range-track {
   height: 6px;
-  background: #1e1e1e;
+  background: transparent;
+  border: none;
   border-radius: 3px;
 }
+
+#editor-font-size::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #0e639c;
+  cursor: pointer;
+  border: 2px solid #1e1e1e;
+  box-sizing: border-box;
+  transition: background 0.15s ease;
+}
+#editor-font-size::-moz-range-thumb:hover { background: #1177bb; }
+
+/* Цвета токенов — чуть контрастнее для типов и методов */
+.tok-type { color: #C8D0DD; }
+.tok-method { color: #FFC66D; font-weight: 500; }
 
 #file-editor {
   flex: 1;
