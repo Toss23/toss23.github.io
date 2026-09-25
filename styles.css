@@ -33,7 +33,6 @@ body {
   border-bottom: 1px solid #333;
   flex-shrink: 0;
 }
-
 #user-info {
   flex: 1;
   font-size: 13px;
@@ -60,27 +59,14 @@ body {
   justify-content: center;
 }
 .icon-btn:hover { background: #2a2d2e; }
-.icon-btn.danger {
-  color: #f48771;
-  border-color: #4a2a2a;
-}
+.icon-btn.danger { color: #f48771; border-color: #4a2a2a; }
 .icon-btn.danger:hover { background: #2a1c1c; }
 
-/* Явно серые и некликабельные disabled-кнопки */
-.icon-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-  background: transparent;
-}
-.icon-btn:disabled:hover {
-  background: transparent;
-}
+.icon-btn:disabled { opacity: 0.3; cursor: not-allowed; background: transparent; }
+.icon-btn:disabled:hover { background: transparent; }
 #btn-rename:disabled,
 #btn-move:disabled,
-#btn-download:disabled {
-  color: #666;
-  border-color: #2a2a2a;
-}
+#btn-download:disabled { color: #666; border-color: #2a2a2a; }
 
 /* ============================================================
    Экраны
@@ -91,7 +77,6 @@ body {
   flex: 1;
   min-height: 0;
 }
-
 .screen-header {
   padding: 8px 12px;
   background: #252526;
@@ -134,7 +119,6 @@ body {
   min-height: 0;
   -webkit-overflow-scrolling: touch;
 }
-
 .list li {
   padding: 12px 14px;
   font-size: 14px;
@@ -152,11 +136,7 @@ body {
 }
 .list li:hover { background: #2a2d2e; }
 .list li:active { background: #333; }
-.list li.empty {
-  color: #666;
-  cursor: default;
-  font-style: italic;
-}
+.list li.empty { color: #666; cursor: default; font-style: italic; }
 .list.small li { padding: 8px 10px; font-size: 12px; min-height: 32px; }
 
 .list li.cloned .name { color: #6cc06c; }
@@ -225,7 +205,6 @@ body {
 }
 .breadcrumbs .sep { margin: 0 4px; color: #555; }
 .breadcrumbs .crumb { color: #7db0f0; }
-
 #screen-files.mode-local .breadcrumbs::before { content: "📦 "; }
 
 /* ============================================================
@@ -246,7 +225,6 @@ body {
   padding: 8px 10px;
   min-height: 38px;
 }
-
 .delete-count {
   font-size: 12px;
   color: #aaa;
@@ -272,13 +250,7 @@ body {
 .list.selection-mode li .size { display: none; }
 
 /* ============================================================
-   Редактор
-   ============================================================ */
-/* ============================================================
    Редактор с overlay-подсветкой
-   ============================================================ */
-/* ============================================================
-   Тулбар редактора
    ============================================================ */
 .editor-toolbar {
   display: flex;
@@ -339,7 +311,7 @@ body {
   font-family: ui-monospace, monospace;
   color: #7db0f0;
 }
-/* Слайдер размера шрифта — сброс всех общих стилей для input */
+
 #editor-font-size {
   -webkit-appearance: none !important;
   appearance: none !important;
@@ -356,14 +328,12 @@ body {
   display: block;
   cursor: pointer;
 }
-
 #editor-font-size::-webkit-slider-runnable-track {
   -webkit-appearance: none;
   height: 6px;
   background: transparent;
   border: none;
 }
-
 #editor-font-size::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -379,14 +349,12 @@ body {
 }
 #editor-font-size::-webkit-slider-thumb:hover { background: #1177bb; }
 #editor-font-size::-webkit-slider-thumb:active { background: #4ea1f3; }
-
 #editor-font-size::-moz-range-track {
   height: 6px;
   background: transparent;
   border: none;
   border-radius: 3px;
 }
-
 #editor-font-size::-moz-range-thumb {
   width: 22px;
   height: 22px;
@@ -399,19 +367,6 @@ body {
 }
 #editor-font-size::-moz-range-thumb:hover { background: #1177bb; }
 
-/* Цвета токенов — чуть контрастнее для типов и методов */
-/* Rider-палитра */
-.tok-keyword { color: #CC7832; }
-.tok-control { color: #CC7832; }
-.tok-type { color: #A9B7C6; }
-.tok-method { color: #FFC66D; }
-.tok-string { color: #6A8759; }
-.tok-char { color: #6A8759; }
-.tok-comment { color: #808080; font-style: italic; }
-.tok-number { color: #6897BB; }
-.tok-preprocessor { color: #BBB529; }
-.tok-op { color: #A9B7C6; }
-
 #file-editor {
   flex: 1;
   min-height: 0;
@@ -419,7 +374,6 @@ body {
   overflow: hidden;
   background: #2B2B2B;
 }
-
 #file-editor .editor-highlight,
 #file-editor #file-content {
   position: absolute;
@@ -438,7 +392,6 @@ body {
   box-sizing: border-box;
   letter-spacing: 0;
 }
-
 #file-editor #file-content {
   background: transparent;
   color: transparent;
@@ -452,7 +405,6 @@ body {
 }
 #file-editor #file-content::selection { background: #214283; color: transparent; }
 #file-editor #file-content:disabled { color: transparent; }
-
 #file-editor .editor-highlight {
   background: #2B2B2B;
   color: #A9B7C6;
@@ -466,6 +418,8 @@ body {
 .tok-keyword { color: #CC7832; }
 .tok-control { color: #CC7832; }
 .tok-type { color: #A9B7C6; }
+.tok-interface { color: #83C0DC; }
+.tok-attribute { color: #BBB529; }
 .tok-method { color: #FFC66D; }
 .tok-string { color: #6A8759; }
 .tok-char { color: #6A8759; }
@@ -473,17 +427,6 @@ body {
 .tok-number { color: #6897BB; }
 .tok-preprocessor { color: #BBB529; }
 .tok-op { color: #A9B7C6; }
-
-.file-path {
-  flex: 1;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.dirty-marker { color: #e2c08d; font-size: 16px; flex-shrink: 0; }
 
 /* Кнопки Сохранить / Откатить в тулбаре редактора */
 #save-file,
@@ -500,6 +443,17 @@ body {
   color: #e2c08d;
 }
 
+.file-path {
+  flex: 1;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.dirty-marker { color: #e2c08d; font-size: 16px; flex-shrink: 0; }
+
 /* ============================================================
    Нижняя панель навигации
    ============================================================ */
@@ -511,7 +465,6 @@ body {
   border-top: 1px solid #333;
   flex-shrink: 0;
 }
-
 #nav-bar button {
   flex: 1;
   padding: 12px 6px;
@@ -558,6 +511,68 @@ body {
 .auth-inner a { color: #7db0f0; }
 
 /* ============================================================
+   Экран загрузки (boot)
+   ============================================================ */
+#screen-boot {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #1e1e1e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.boot-inner { max-width: 420px; width: 100%; }
+.boot-inner h1 { font-size: 22px; margin: 0 0 20px; text-align: center; }
+#boot-list { list-style: none; padding: 0; margin: 0 0 16px; }
+#boot-list li {
+  padding: 10px 14px;
+  background: #252526;
+  border: 1px solid #333;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+#boot-list li .status { flex-shrink: 0; width: 18px; text-align: center; font-weight: bold; }
+#boot-list li .label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#boot-list li .msg {
+  font-size: 11px;
+  color: #888;
+  flex-shrink: 0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#boot-list li.pending .status::before { content: "…"; color: #888; }
+#boot-list li.ok .status::before { content: "✓"; color: #6cc06c; }
+#boot-list li.fail .status::before { content: "✗"; color: #f48771; }
+#boot-list li.pending { opacity: 0.85; }
+#boot-list li.ok { opacity: 0.7; }
+#boot-list li.fail { color: #f48771; border-color: #4a2a2a; }
+#boot-status {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.5;
+  text-align: center;
+  margin-bottom: 16px;
+  min-height: 36px;
+}
+#boot-status.error { color: #f48771; }
+#boot-retry { display: block; width: 100%; margin-top: 4px; }
+
+/* ============================================================
    Кнопки
    ============================================================ */
 .primary {
@@ -573,11 +588,18 @@ body {
 }
 .primary:hover { background: #1177bb; }
 .primary:disabled { opacity: 0.5; cursor: default; }
-.primary.big { padding: 14px 24px; font-size: 15px; width: 100%; min-height: 48px; }
-.primary.danger {
-  background: #6b2a2a;
-  color: #ffcccc;
+.primary.big {
+  padding: 14px 24px;
+  font-size: 15px;
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-sizing: border-box;
 }
+.primary.danger { background: #6b2a2a; color: #ffcccc; }
 .primary.danger:hover { background: #7d3232; }
 .primary.danger:disabled { opacity: 0.5; cursor: default; }
 
@@ -592,6 +614,7 @@ body {
   font-size: 13px;
   white-space: nowrap;
 }
+.btn-link:hover { background: #2a2d2e; }
 
 .modal-content .wide {
   width: 100%;
@@ -613,7 +636,6 @@ body {
   justify-content: center;
   z-index: 100;
 }
-
 .modal-content {
   background: #252526;
   border-top-left-radius: 12px;
@@ -713,10 +735,7 @@ body {
   user-select: none;
 }
 .move-list li:hover { background: #2a2d2e; }
-.move-list li.current {
-  color: #6cc06c;
-  cursor: default;
-}
+.move-list li.current { color: #6cc06c; cursor: default; }
 .move-list li.current:hover { background: transparent; }
 .move-list li .icon { flex-shrink: 0; }
 .move-list li .name {
@@ -729,11 +748,7 @@ body {
 /* ============================================================
    Модалка выбора режима репозитория
    ============================================================ */
-.action-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+.action-list { display: flex; flex-direction: column; gap: 8px; }
 .action-row {
   display: flex;
   flex-direction: column;
@@ -760,7 +775,6 @@ body {
    Модалка коммита — diff
    ============================================================ */
 #commit-files { max-height: 45vh; }
-
 .commit-file {
   display: block !important;
   padding: 0 !important;
@@ -800,12 +814,10 @@ body {
   border-top: 1px solid #333;
 }
 .commit-file.expanded .diff-box { display: block; }
-
 .diff-line { padding: 0 10px; white-space: pre; }
 .diff-line.add { background: rgba(108, 192, 108, 0.12); color: #b8e6b8; }
 .diff-line.rem { background: rgba(244, 135, 113, 0.10); color: #f0b0a0; }
 .diff-line.ctx { color: #888; }
-
 #commit-revert-all { margin-right: auto; }
 
 /* ============================================================
@@ -818,11 +830,7 @@ body {
   gap: 2px;
   padding: 10px 14px;
 }
-.history-line1 {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-}
+.history-line1 { display: flex; gap: 8px; align-items: baseline; }
 .history-line1 .sha {
   font-family: ui-monospace, monospace;
   font-size: 11px;
@@ -845,7 +853,6 @@ body {
   justify-content: space-between;
 }
 .history-list li.current { background: #1e3a4a; }
-
 .history-meta {
   padding: 8px 0;
   border-bottom: 1px solid #333;
@@ -866,22 +873,115 @@ body {
 }
 
 /* ============================================================
+   AI-модалка
+   ============================================================ */
+.ai-modal-content { max-width: 720px; }
+.ai-toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+.ai-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 200px;
+  max-height: 60vh;
+  padding: 4px 0;
+}
+.ai-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #333;
+  flex-wrap: wrap;
+}
+.ai-footer-spacer { flex: 1; min-width: 8px; }
+.ai-empty { color: #888; font-size: 13px; padding: 20px; text-align: center; }
+.ai-info { font-size: 12px; color: #aaa; }
+.ai-item { display: flex; padding: 8px 10px; border-bottom: 1px solid #2a2a2a; }
+.ai-item-label { display: flex; align-items: flex-start; gap: 10px; flex: 1; cursor: pointer; }
+.ai-checkbox { margin-top: 4px; flex-shrink: 0; width: 18px; height: 18px; accent-color: #0e639c; }
+.ai-item-info { flex: 1; min-width: 0; }
+.ai-item-title { font-size: 13px; font-family: ui-monospace, monospace; }
+.ai-item-type { color: #7db0f0; }
+.ai-item-path { color: #ddd; word-break: break-all; }
+.ai-item-meta { font-size: 11px; color: #888; margin-top: 2px; display: flex; gap: 6px; flex-wrap: wrap; }
+.ai-item-status { font-weight: bold; }
+.ai-status-ok { color: #6cc06c; }
+.ai-status-warn { color: #e2c08d; }
+.ai-status-fail { color: #f48771; }
+.ai-item-reason { color: #888; }
+.ai-snippet { margin-top: 6px; font-size: 11px; }
+.ai-snippet summary { cursor: pointer; color: #7db0f0; }
+.ai-snippet-label { color: #888; margin-top: 4px; }
+.ai-pre {
+  background: #1a1a1a;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow: auto;
+  margin: 4px 0;
+}
+.ai-pre-find { border-left: 3px solid #f48771; }
+.ai-pre-replace { border-left: 3px solid #6cc06c; }
+.ai-pre-content { border-left: 3px solid #7db0f0; }
+.ai-report-summary { padding: 8px 10px; font-size: 13px; }
+.ai-report-line { color: #6cc06c; }
+.ai-report-line-error { color: #f48771; }
+.ai-report-section { font-size: 12px; color: #aaa; margin: 10px 0 4px; }
+.ai-report-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+.ai-report-list li { padding: 3px 0; }
+.ai-report-ok { color: #b8e6b8; }
+.ai-report-fail { color: #f0b0a0; word-break: break-all; }
+.ai-copy-block { margin-top: 12px; }
+.ai-copy-textarea {
+  width: 100%;
+  min-height: 120px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  background: #1a1a1a;
+  color: #ddd;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 6px;
+  box-sizing: border-box;
+  resize: vertical;
+  margin-bottom: 6px;
+}
+.ai-map-preview-body {
+  flex: 1;
+  width: 100%;
+  min-height: 40vh;
+  max-height: 60vh;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  background: #1a1a1a;
+  color: #ddd;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 10px;
+  box-sizing: border-box;
+  resize: vertical;
+  outline: none;
+}
+
+/* ============================================================
    Универсальный диалог
    ============================================================ */
 .dialog-content { max-width: 420px; }
-.dialog-content #dialog-title {
-  font-size: 15px;
-  margin: 0 0 4px;
-}
+.dialog-content #dialog-title { font-size: 15px; margin: 0 0 4px; }
 .dialog-content .modal-text { margin: 0 0 4px; }
-
 #dialog-actions { justify-content: stretch; flex-wrap: wrap; }
 #dialog-actions button { flex: 1 1 calc(50% - 4px); min-width: 0; }
-
-/* Если кнопок больше двух — раскладываем в столбик */
-#dialog-actions:has(button:nth-child(3)) button {
-  flex: 1 1 100%;
-}
+#dialog-actions:has(button:nth-child(3)) button { flex: 1 1 100%; }
 
 #dialog-input {
   background: #1e1e1e;
@@ -894,10 +994,7 @@ body {
   width: 100%;
   min-height: 42px;
 }
-#dialog-input:focus {
-  outline: none;
-  border-color: #0e639c;
-}
+#dialog-input:focus { outline: none; border-color: #0e639c; }
 
 /* ============================================================
    Прогрессбар
@@ -912,7 +1009,7 @@ body {
   border: 1px solid #3c3c3c;
   border-radius: 6px;
   padding: 12px 14px;
-  z-index: 10000;     /* гарантированно выше busy-overlay */
+  z-index: 10000;
   overflow: hidden;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
 }
@@ -932,7 +1029,6 @@ body {
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
-
 .progress-box.indeterminate .progress-fill {
   width: 40% !important;
   animation: progress-slide 1.2s linear infinite;
@@ -1022,7 +1118,6 @@ body {
    Утилиты
    ============================================================ */
 .hidden { display: none !important; }
-
 .visually-hidden {
   position: absolute !important;
   width: 1px;
@@ -1069,12 +1164,10 @@ body {
     width: 100%;
     margin: 0 auto;
   }
-
   #app-header { padding: 10px 24px; }
   #nav-bar { padding: 8px 24px; gap: 8px; }
   .list li { padding: 10px 16px; font-size: 13px; min-height: 36px; }
   #file-content { padding: 16px 24px; }
-
   .modal { align-items: center; }
   .modal-content {
     border-radius: 12px;
@@ -1093,7 +1186,6 @@ body {
     font-size: 12px;
     min-height: 42px;
   }
-
   #commit-modal .modal-actions {
     flex-direction: column-reverse;
     gap: 6px;
@@ -1106,32 +1198,56 @@ body {
     margin-right: 0;
     margin-top: 4px;
   }
-
   #dialog-actions { flex-wrap: nowrap; }
   #dialog-actions button { flex: 1 1 100%; }
-
-  .delete-count {
-    text-align: center;
-    margin-right: 0;
-  }
-
+  .delete-count { text-align: center; margin-right: 0; }
   #app-header { padding-left: 8px; padding-right: 8px; }
   .screen-header { padding: 8px; }
-
   .modal-content {
     padding: 14px;
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
   }
-
   .modal-actions button {
     padding: 11px 14px;
     min-height: 44px;
   }
   #dialog-actions button { min-height: 46px; }
+  .progress-box { top: calc(50px + env(safe-area-inset-top)); }
+}
 
-  .progress-box {
-    top: calc(50px + env(safe-area-inset-top));
-  }
+/* ============================================================
+   Busy-overlay (блокировка UI)
+   ============================================================ */
+.busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  cursor: wait;
+  user-select: none;
+  touch-action: none;
+}
+.busy-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #1177bb;
+  border-radius: 50%;
+  animation: busy-spin 0.9s linear infinite;
+}
+@keyframes busy-spin { to { transform: rotate(360deg); } }
+.busy-text {
+  color: #ddd;
+  font-size: 14px;
+  font-family: -apple-system, system-ui, sans-serif;
+  text-align: center;
+  max-width: 80vw;
+  padding: 0 16px;
 }
 
 /* ============================================================
@@ -1167,279 +1283,28 @@ body {
 }
 
 /* ============================================================
-   Экран загрузки (boot)
+   Полосы прокрутки — тёмная тема
    ============================================================ */
-#screen-boot {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: #1e1e1e;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-.boot-inner {
-  max-width: 420px;
-  width: 100%;
-}
-.boot-inner h1 {
-  font-size: 22px;
-  margin: 0 0 20px;
-  text-align: center;
-}
-#boot-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 16px;
-}
-#boot-list li {
-  padding: 10px 14px;
-  background: #252526;
-  border: 1px solid #333;
-  border-radius: 6px;
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-}
-#boot-list li .status {
-  flex-shrink: 0;
-  width: 18px;
-  text-align: center;
-  font-weight: bold;
-}
-#boot-list li .label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#boot-list li .msg {
-  font-size: 11px;
-  color: #888;
-  flex-shrink: 0;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#boot-list li.pending .status::before { content: "…"; color: #888; }
-#boot-list li.ok .status::before { content: "✓"; color: #6cc06c; }
-#boot-list li.fail .status::before { content: "✗"; color: #f48771; }
-
-#boot-list li.pending { opacity: 0.85; }
-#boot-list li.ok { opacity: 0.7; }
-#boot-list li.fail {
-  color: #f48771;
-  border-color: #4a2a2a;
-}
-
-#boot-status {
-  font-size: 12px;
-  color: #888;
-  line-height: 1.5;
-  text-align: center;
-  margin-bottom: 16px;
-  min-height: 36px;
-}
-#boot-status.error { color: #f48771; }
-
-#boot-retry {
-  display: block;
-  width: 100%;
-  margin-top: 4px;
-}
-
-/* ============================================================
-   Оверлей блокировки UI
-   ============================================================ */
-.busy-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 900;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  cursor: wait;
-  user-select: none;
-  touch-action: none;
-}
-.busy-spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid rgba(255, 255, 255, 0.15);
-  border-top-color: #1177bb;
-  border-radius: 50%;
-  animation: busy-spin 0.9s linear infinite;
-}
-@keyframes busy-spin {
-  to { transform: rotate(360deg); }
-}
-.busy-text {
-  color: #ddd;
-  font-size: 14px;
-  font-family: -apple-system, system-ui, sans-serif;
-  text-align: center;
-  max-width: 80vw;
-  padding: 0 16px;
-}
-
-/* ============================================================
-   Стилизация полос прокрутки
-   ============================================================ */
-
-/* Firefox */
-html, body, .list, .move-list, #file-content, .diff-box {
+html, body, .list, .move-list, .editor-highlight, .ai-body, .diff-box {
   scrollbar-width: thin;
   scrollbar-color: #4a4a4a #1e1e1e;
 }
-
-/* WebKit (Chrome, Edge, Safari) */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-track {
-  background: #1e1e1e;
-}
-
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #1e1e1e; }
 ::-webkit-scrollbar-thumb {
   background: #3c3c3c;
   border: 2px solid #1e1e1e;
   border-radius: 6px;
   background-clip: padding-box;
 }
+::-webkit-scrollbar-thumb:hover { background: #4a4a4a; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:active { background: #1177bb; background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: #1e1e1e; }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #4a4a4a;
-  background-clip: padding-box;
-}
-
-::-webkit-scrollbar-thumb:active {
-  background: #1177bb;
-  background-clip: padding-box;
-}
-
-::-webkit-scrollbar-corner {
-  background: #1e1e1e;
-}
-
-/* Мобильные — полосы по умолчанию тонкие и появляются при скролле,
-   но с этим правилом они будут в цвет темы, когда видны. */
 @media (max-width: 500px) {
-  ::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
-  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-thumb {
     border: none;
     background: rgba(255, 255, 255, 0.15);
   }
-}
-
-/* ============================================================
-   AI modal
-   ============================================================ */
-.ai-modal-content { max-width: 720px; }
-.ai-toolbar { display: flex; gap: 6px; }
-.ai-body {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 200px;
-  max-height: 60vh;
-  padding: 4px 0;
-}
-.ai-footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #333;
-  flex-wrap: wrap;
-}
-.ai-footer-spacer { flex: 1; min-width: 8px; }
-.ai-empty { color: #888; font-size: 13px; padding: 20px; text-align: center; }
-.ai-info { font-size: 12px; color: #aaa; }
-.ai-item { display: flex; padding: 8px 10px; border-bottom: 1px solid #2a2a2a; }
-.ai-item-label { display: flex; align-items: flex-start; gap: 10px; flex: 1; cursor: pointer; }
-.ai-checkbox { margin-top: 4px; flex-shrink: 0; width: 18px; height: 18px; accent-color: #0e639c; }
-.ai-item-info { flex: 1; min-width: 0; }
-.ai-item-title { font-size: 13px; font-family: ui-monospace, monospace; }
-.ai-item-type { color: #7db0f0; }
-.ai-item-path { color: #ddd; word-break: break-all; }
-.ai-item-meta { font-size: 11px; color: #888; margin-top: 2px; display: flex; gap: 6px; flex-wrap: wrap; }
-.ai-item-status { font-weight: bold; }
-.ai-status-ok { color: #6cc06c; }
-.ai-status-warn { color: #e2c08d; }
-.ai-status-fail { color: #f48771; }
-.ai-item-reason { color: #888; }
-.ai-snippet { margin-top: 6px; font-size: 11px; }
-.ai-snippet summary { cursor: pointer; color: #7db0f0; }
-.ai-snippet-label { color: #888; margin-top: 4px; }
-.ai-pre {
-  background: #1a1a1a;
-  padding: 6px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-family: ui-monospace, monospace;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 200px;
-  overflow: auto;
-  margin: 4px 0;
-}
-.ai-pre-find { border-left: 3px solid #f48771; }
-.ai-pre-replace { border-left: 3px solid #6cc06c; }
-.ai-pre-content { border-left: 3px solid #7db0f0; }
-.ai-report-summary { padding: 8px 10px; font-size: 13px; }
-.ai-report-line { color: #6cc06c; }
-.ai-report-line-error { color: #f48771; }
-.ai-report-section { font-size: 12px; color: #aaa; margin: 10px 0 4px; }
-.ai-report-list {
-  list-style: none; padding: 0; margin: 0;
-  font-size: 12px; font-family: ui-monospace, monospace;
-}
-.ai-report-list li { padding: 3px 0; }
-.ai-report-ok { color: #b8e6b8; }
-.ai-report-fail { color: #f0b0a0; word-break: break-all; }
-.ai-copy-block { margin-top: 12px; }
-.ai-copy-textarea {
-  width: 100%;
-  min-height: 120px;
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
-  background: #1a1a1a;
-  color: #ddd;
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 6px;
-  box-sizing: border-box;
-  resize: vertical;
-  margin-bottom: 6px;
-}
-
-.ai-map-preview-body {
-  flex: 1;
-  width: 100%;
-  min-height: 40vh;
-  max-height: 60vh;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  background: #1a1a1a;
-  color: #ddd;
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 10px;
-  box-sizing: border-box;
-  resize: vertical;
-  outline: none;
 }
