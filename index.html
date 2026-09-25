@@ -56,6 +56,7 @@
       <div id="delete-actions" class="delete-actions hidden">
         <span id="delete-count" class="delete-count">Выбрано: 0</span>
         <button id="btn-download" class="icon-btn" title="Скачать выбранные" disabled>📥 Скачать</button>
+        <button id="btn-move" class="icon-btn" title="Доступно при выборе одного элемента" disabled>📦 Переместить</button>
         <button id="btn-rename" class="icon-btn" title="Доступно при выборе одного элемента" disabled>✏️ Переименовать</button>
         <button id="btn-delete-confirm" class="icon-btn danger" disabled>🗑️ Удалить выбранные</button>
         <button id="btn-delete-cancel" class="icon-btn">Отмена</button>
@@ -104,6 +105,17 @@
     <button id="nav-exit" title="Выйти из репозитория">🏠 Выйти</button>
     <button id="nav-back" title="Назад">⬅️ Назад</button>
   </nav>
+
+  <!-- Модалка выбора папки для перемещения -->
+  <div id="move-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h3 id="move-modal-title">Переместить</h3>
+        <button id="move-modal-close" class="icon-btn">✕</button>
+      </div>
+      <ul id="move-list" class="move-list"></ul>
+    </div>
+  </div>
 
   <!-- Модалка коммита -->
   <div id="commit-modal" class="modal hidden">

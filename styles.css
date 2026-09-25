@@ -140,11 +140,9 @@ body {
 }
 .list.small li { padding: 8px 10px; font-size: 12px; min-height: 32px; }
 
-/* Репозиторий с локальной копией — зелёный */
 .list li.cloned .name { color: #6cc06c; }
 .list li.cloned .size { color: #6cc06c; opacity: 0.75; }
 
-/* Файл или папка */
 .entry .icon { flex-shrink: 0; }
 .entry .name {
   flex: 1;
@@ -162,11 +160,9 @@ body {
   font-weight: normal;
 }
 
-/* Изменённые файлы и папки — тем же жёлтым, что и точка в редакторе */
 .list li.dirty .name { color: #e2c08d; }
 .list li.dirty .icon { filter: sepia(0.4) brightness(1.1); }
 
-/* Пометка файлов/папок, изменённых на GitHub */
 .remote-badge {
   flex-shrink: 0;
   font-size: 12px;
@@ -174,6 +170,26 @@ body {
   opacity: 0.85;
 }
 .list li.entry.remote .name { color: #7db0f0; }
+
+/* Пункт "..." — переход на уровень выше, закреплён сверху */
+.list li.entry.updir {
+  color: #7db0f0;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #252526;
+  border-bottom: 1px solid #333;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+.list li.entry.updir:hover { background: #2a3a4a; }
+
+.list li.dragging { opacity: 0.45; }
+.list li.drop-target {
+  background: #1e4a6a;
+  outline: 1px solid #1177bb;
+  outline-offset: -2px;
+}
 
 /* ============================================================
    Хлебные крошки
@@ -211,7 +227,8 @@ body {
   padding: 8px 10px;
   min-height: 38px;
 }
-#btn-rename:disabled { opacity: 0.4; cursor: default; }
+#btn-rename:disabled,
+#btn-move:disabled { opacity: 0.4; cursor: default; }
 
 .delete-count {
   font-size: 12px;
@@ -376,7 +393,6 @@ body {
   white-space: nowrap;
 }
 
-/* Широкая кнопка внизу модалки */
 .modal-content .wide {
   width: 100%;
   padding: 12px 16px;
@@ -474,6 +490,43 @@ body {
 }
 
 /* ============================================================
+   Модалка перемещения
+   ============================================================ */
+.move-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  max-height: 60vh;
+  -webkit-overflow-scrolling: touch;
+}
+.move-list li {
+  padding: 12px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #262626;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  min-height: 44px;
+  user-select: none;
+}
+.move-list li:hover { background: #2a2d2e; }
+.move-list li.current {
+  color: #6cc06c;
+  cursor: default;
+}
+.move-list li.current:hover { background: transparent; }
+.move-list li .icon { flex-shrink: 0; }
+.move-list li .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================
    Модалка выбора режима репозитория
    ============================================================ */
 .action-list {
@@ -553,7 +606,6 @@ body {
 .diff-line.rem { background: rgba(244, 135, 113, 0.10); color: #f0b0a0; }
 .diff-line.ctx { color: #888; }
 
-/* Специфика commit-modal на мобильном */
 #commit-revert-all { margin-right: auto; }
 
 /* ============================================================
@@ -623,8 +675,8 @@ body {
 }
 .dialog-content .modal-text { margin: 0 0 4px; }
 
-#dialog-actions { justify-content: stretch; }
-#dialog-actions button { flex: 1; min-width: 0; }
+#dialog-actions { justify-content: stretch; flex-wrap: wrap; }
+#dialog-actions button { flex: 1 1 calc(50% - 4px); min-width: 0; }
 
 #dialog-input {
   background: #1e1e1e;
@@ -829,7 +881,6 @@ body {
    Мобильный: <= 500px
    ============================================================ */
 @media (max-width: 500px) {
-  /* Панели кнопок — по 2 в ряд */
   .file-actions .icon-btn,
   .delete-actions .icon-btn {
     flex: 1 1 calc(50% - 3px);
@@ -838,7 +889,6 @@ body {
     min-height: 42px;
   }
 
-  /* Модалка коммита — кнопки в столбик */
   #commit-modal .modal-actions {
     flex-direction: column-reverse;
     gap: 6px;
@@ -852,34 +902,28 @@ body {
     margin-top: 4px;
   }
 
-  /* dialog actions — 2 кнопки в ряд */
-  #dialog-actions {
-    flex-wrap: nowrap;
-  }
+  #dialog-actions { flex-wrap: nowrap; }
+  #dialog-actions button { flex: 1 1 100%; }
 
-  /* Счётчик удаления — на всю ширину */
   .delete-count {
     text-align: center;
     margin-right: 0;
   }
 
-  /* Меньше отступы в шапке */
   #app-header { padding-left: 8px; padding-right: 8px; }
   .screen-header { padding: 8px; }
 
-  /* Чуть компактнее модалка */
-  .modal-content { padding: 14px; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+  .modal-content {
+    padding: 14px;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
 
-  /* Кнопки в модалках — крупнее для пальцев */
   .modal-actions button {
     padding: 11px 14px;
     min-height: 44px;
   }
-  #dialog-actions button {
-    min-height: 46px;
-  }
+  #dialog-actions button { min-height: 46px; }
 
-  /* Прогрессбар ближе к верху */
   .progress-box {
     top: calc(50px + env(safe-area-inset-top));
   }
@@ -915,50 +959,4 @@ body {
 .drop-overlay-text {
   font-size: 15px;
   color: #ddd;
-}
-
-/* Dialog с 4+ кнопками — переносим по 2 в ряд */
-#dialog-actions {
-  flex-wrap: wrap;
-}
-#dialog-actions button {
-  flex: 1 1 calc(50% - 4px);
-  min-width: 0;
-}
-
-@media (max-width: 500px) {
-  #dialog-actions button {
-    flex: 1 1 100%;
-  }
-}
-
-.list li.dragging {
-  opacity: 0.5;
-}
-
-/* ============================================================
-   Пункт "..." — переход на уровень выше
-   ============================================================ */
-.list li.entry.updir {
-  color: #7db0f0;
-  font-weight: 600;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: #252526;
-  border-bottom: 1px solid #333;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
-}
-.list li.entry.updir:hover { background: #2a3a4a; }
-
-/* ============================================================
-   Внутренний drag-and-drop
-   ============================================================ */
-.list li.dragging {
-  opacity: 0.45;
-}
-.list li.drop-target {
-  background: #1e4a6a;
-  outline: 1px solid #1177bb;
-  outline-offset: -2px;
 }

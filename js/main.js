@@ -77,6 +77,7 @@ const filesScreen = initFilesScreen({
   onOpenHistory: openHistory,
   onRename: renameSelected,
   onDownload: downloadSelected,
+  onMove: moveSelected,
   onMoveFile: moveEntry,
 });
 
@@ -592,50 +593,6 @@ async function loadTree() {
 
 /* ---------- Режим 2: local ---------- */
 
-async function repairLegacyClone(meta, filesIndex) {
-  const key = meta.key;
-  let fixed = 0;
-
-  for (const m of filesIndex) {
-    // Если baseSha и isNew уже проставлены — файл в порядке.
-    if (m.baseSha !== undefined && m.isNew !== undefined) continue;
-
-    const entry = await storage.getFile(key, m.path);
-    if (!entry) continue;
-
-    let newSha;
-    if (entry.isBinary) {
-      newSha = await gitBlobShaFromBase64(entry.content);
-    } else {
-      newSha = await gitBlobSha(entry.content);
-    }
-
-    entry.sha = newSha;
-    entry.baseSha = newSha;
-    entry.isNew = false;
-    if (!entry.isBinary && !entry.baseContentLf) {
-      entry.baseContentLf = toLf(entry.content);
-    }
-    await storage.saveFile(key, entry);
-
-    m.sha = newSha;
-    m.baseSha = newSha;
-    m.isNew = false;
-
-    fixed++;
-  }
-
-  // Помечаем копию как обработанную — миграция идемпотентна.
-  await storage.updateRepoMeta(key, { repaired: true });
-
-  if (fixed > 0) {
-    console.log(`[repairLegacyClone] восстановлено файлов: ${fixed}`);
-    return true;
-  }
-  return false;
-}
-
-
 async function openRepoLocal(repo) {
   if (!(await confirmDiscard())) return;
   const key = storage.makeRepoKey(repo.owner.login, repo.name, repo.default_branch);
@@ -661,11 +618,49 @@ async function openRepoLocal(repo) {
   await enterLocalMode(repo, meta);
 }
 
+async function repairLegacyClone(meta, filesIndex) {
+  const key = meta.key;
+  let fixed = 0;
+
+  for (const m of filesIndex) {
+    if (m.baseSha !== undefined && m.isNew !== undefined) continue;
+
+    const entry = await storage.getFile(key, m.path);
+    if (!entry) continue;
+
+    let newSha;
+    if (entry.isBinary) {
+      newSha = await gitBlobShaFromBase64(entry.content);
+    } else {
+      newSha = await gitBlobSha(entry.content);
+    }
+
+    entry.sha = newSha;
+    entry.baseSha = newSha;
+    entry.isNew = false;
+    if (!entry.isBinary && !entry.baseContentLf) {
+      entry.baseContentLf = toLf(entry.content);
+    }
+    await storage.saveFile(key, entry);
+
+    m.sha = newSha;
+    m.baseSha = newSha;
+    m.isNew = false;
+    fixed++;
+  }
+
+  await storage.updateRepoMeta(key, { repaired: true });
+
+  if (fixed > 0) {
+    console.log(`[repairLegacyClone] восстановлено файлов: ${fixed}`);
+    return true;
+  }
+  return false;
+}
+
 async function enterLocalMode(repo, meta) {
   let filesIndex = await storage.loadFilesIndex(meta.key);
 
-  // Одноразовая миграция старых копий: baseSha/isNew были не везде,
-  // из-за чего ломалось сравнение «файл изменён».
   if (!meta.repaired) {
     const didFix = await repairLegacyClone(meta, filesIndex);
     if (didFix) {
@@ -717,8 +712,6 @@ async function enterLocalMode(repo, meta) {
     files: filesIndex.map((f) => ({
       path: f.path,
       sha: f.sha,
-      // Старые копии не имели baseSha — подставляем sha, чтобы не считать
-      // файл изменённым только из-за отсутствия поля.
       baseSha: f.baseSha !== undefined ? f.baseSha : f.sha,
       size: f.size || 0,
       isNew: !!f.isNew,
@@ -769,6 +762,7 @@ async function cloneAndOpen(repo) {
       fileCount: files.length,
       totalBytes,
       pendingDeletes: [],
+      repaired: true,
     };
 
     progressBar.show("Сохранение: 0%");
@@ -1047,6 +1041,116 @@ async function moveEntry(srcPath, destFolderPath) {
   }
 }
 
+/* ---------- Перемещение через диалог ---------- */
+
+let moveModalInstance = null;
+
+function initMoveModal() {
+  const modal = document.getElementById("move-modal");
+  const list = document.getElementById("move-list");
+  const titleEl = document.getElementById("move-modal-title");
+  const closeBtn = document.getElementById("move-modal-close");
+  if (!modal || !list) return { open: async () => null };
+
+  let resolver = null;
+
+  function close(path) {
+    modal.classList.add("hidden");
+    const r = resolver;
+    resolver = null;
+    if (r) r(path);
+  }
+
+  if (closeBtn) closeBtn.addEventListener("click", () => close(null));
+
+  return {
+    open({ title, options }) {
+      return new Promise((resolve) => {
+        resolver = resolve;
+        if (titleEl) titleEl.textContent = title || "Переместить";
+        list.innerHTML = "";
+
+        for (const o of options) {
+          const li = document.createElement("li");
+          if (o.current) li.classList.add("current");
+
+          const icon = document.createElement("span");
+          icon.className = "icon";
+          icon.textContent = o.icon || "📁";
+          li.appendChild(icon);
+
+          const name = document.createElement("span");
+          name.className = "name";
+          name.textContent = o.label;
+          li.appendChild(name);
+
+          if (o.current) {
+            const check = document.createElement("span");
+            check.className = "icon";
+            check.textContent = "✓";
+            li.appendChild(check);
+          } else {
+            li.addEventListener("click", () => close(o.value));
+          }
+
+          list.appendChild(li);
+        }
+        modal.classList.remove("hidden");
+      });
+    },
+  };
+}
+
+async function moveSelected() {
+  const { selection, files, currentPath } = getState();
+  if (!selection || selection.size !== 1) return;
+
+  const sel = [...selection][0];
+  const isFolder = sel.endsWith("/");
+  const srcPath = isFolder ? sel.slice(0, -1) : sel;
+  const srcName = srcPath.split("/").pop();
+
+  const currentFolder = (currentPath || "").replace(/\/+$/, "");
+
+  const folderSet = new Set();
+  for (const f of files) {
+    const parts = f.path.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      folderSet.add(parts.slice(0, i).join("/"));
+    }
+  }
+
+  const options = [{
+    value: "",
+    label: "Корень репозитория",
+    icon: "🏠",
+    current: currentFolder === "",
+  }];
+
+  const sorted = [...folderSet].sort((a, b) => a.localeCompare(b));
+  for (const folder of sorted) {
+    if (isFolder && (folder === srcPath || folder.startsWith(srcPath + "/"))) continue;
+    options.push({
+      value: folder,
+      label: folder,
+      icon: "📁",
+      current: folder === currentFolder,
+    });
+  }
+
+  if (!moveModalInstance) moveModalInstance = initMoveModal();
+
+  const dest = await moveModalInstance.open({
+    title: `Переместить: ${srcName}`,
+    options,
+  });
+
+  if (dest === null || dest === undefined) return;
+  if (dest === currentFolder) return;
+
+  await moveEntry(srcPath, dest);
+}
+
 /* ---------- Скачивание ---------- */
 
 async function downloadSelected() {
@@ -1134,7 +1238,7 @@ function triggerDownload(blob, name) {
 /* ---------- Просмотр бинарных файлов и изображений ---------- */
 
 async function openBinaryFile(file) {
-  const { octokit, repo, cloned, mode } = getState();
+  const { octokit, repo } = getState();
   if (!octokit || !repo) return;
 
   if (isImagePath(file.path)) {
@@ -1284,15 +1388,11 @@ async function renameFile(oldPath, newPath) {
     return;
   }
 
-  // content — в оригинальной EOL (для отправки на GitHub и для sha).
-  // contentLf — LF-версия (для dirty и для редактора).
-  // eol — оригинальный перевод строк этого файла.
   let content = null;
   let contentLf = null;
   let eol = fileEntry.eol || null;
   let isBinary = !!fileEntry.isBinary;
 
-  // 1. Local IndexedDB — там и содержимое, и EOL уже есть.
   if (mode === "local" && cloned) {
     const entry = await storage.getFile(cloned.key, oldPath);
     if (entry) {
@@ -1305,7 +1405,6 @@ async function renameFile(oldPath, newPath) {
     }
   }
 
-  // 2. Dirty — уже LF-версия.
   if (content === null && !isBinary) {
     const d = dirty.get(oldPath);
     if (d !== undefined && d !== null) {
@@ -1315,13 +1414,11 @@ async function renameFile(oldPath, newPath) {
     }
   }
 
-  // 3. Новый бинарник в remote — base64 в state.
   if (content === null && fileEntry.isNew && fileEntry.content) {
     content = fileEntry.content;
     isBinary = true;
   }
 
-  // 4. Существующий файл на GitHub — тянем через API.
   if (content === null) {
     const ext = (oldPath.split(".").pop() || "").toLowerCase();
     const looksBinary = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "pdf", "zip", "gz", "woff", "woff2", "ttf", "otf", "eot", "mp3", "mp4", "webm"].includes(ext);
@@ -1341,7 +1438,7 @@ async function renameFile(oldPath, newPath) {
         const raw = await getFile(octokit, repo.owner, repo.name, oldPath, branch);
         eol = detectEol(raw) || "\n";
         contentLf = toLf(raw);
-        content = fromLf(contentLf, eol); // нормализуем к оригинальному EOL
+        content = fromLf(contentLf, eol);
         isBinary = false;
       } catch (e) {
         console.warn("rename read:", e.message);
@@ -1364,7 +1461,6 @@ async function renameFile(oldPath, newPath) {
     ? base64ToBytes(content).length
     : new TextEncoder().encode(content).length;
 
-  // Исходный baseSha (для старых копий может быть undefined).
   const originalBaseSha =
     fileEntry.baseSha !== undefined ? fileEntry.baseSha
     : fileEntry.isNew ? null
