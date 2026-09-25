@@ -1,9 +1,9 @@
 let overlay = null;
 let textEl = null;
-let counter = 0;
+let currentToken = null;
 
 function ensure() {
-  if (overlay) return;
+  if (overlay && overlay.isConnected) return;
   overlay = document.getElementById("busy-overlay");
   textEl = document.getElementById("busy-text");
 }
@@ -11,38 +11,42 @@ function ensure() {
 export function showBusy(text = "Загрузка…") {
   ensure();
   if (!overlay) return;
-  counter++;
+  currentToken = Symbol("busy");
   if (textEl) textEl.textContent = text;
   overlay.classList.remove("hidden");
-
-  // Блокируем скролл body.
   document.body.style.overflow = "hidden";
+  return currentToken;
 }
 
-export function hideBusy() {
+export function updateBusyText(text) {
+  ensure();
+  if (!overlay || overlay.classList.contains("hidden")) return;
+  if (textEl) textEl.textContent = text;
+}
+
+export function hideBusy(token = null) {
   ensure();
   if (!overlay) return;
-  counter = Math.max(0, counter - 1);
-  if (counter > 0) return;
+  // Если передан токен — скрываем только если он совпадает.
+  if (token && currentToken && token !== currentToken) return;
+  currentToken = null;
   overlay.classList.add("hidden");
   document.body.style.overflow = "";
 }
 
-// Принудительно скрыть, независимо от счётчика.
 export function forceHideBusy() {
   ensure();
-  counter = 0;
+  currentToken = null;
   if (!overlay) return;
   overlay.classList.add("hidden");
   document.body.style.overflow = "";
 }
 
-// Обернуть промис: показать оверлей, выполнить, скрыть.
 export async function withBusy(text, fn) {
-  showBusy(text);
+  const token = showBusy(text);
   try {
     return await fn();
   } finally {
-    hideBusy();
+    hideBusy(token);
   }
 }

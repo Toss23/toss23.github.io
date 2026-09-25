@@ -28,7 +28,7 @@ import { initDialogs } from "@ui/dialogs.js";
 import { initProgressBar } from "@ui/progress-bar.js";
 import { initFullscreen } from "@ui/fullscreen.js";
 import { initDropZone } from "@ui/drop-zone.js";
-import { showBusy, hideBusy } from "@ui/busy.js";
+import { showBusy, hideBusy, updateBusyText, forceHideBusy } from "@ui/busy.js";
 import { initHistoryModal } from "@ui/history-modal.js";
 import { initRepoActionsModal } from "@ui/repo-actions-modal.js";
 import { initUpdateModal } from "@ui/update-modal.js";
@@ -802,7 +802,7 @@ async function cloneAndOpen(repo) {
   } catch (e) {
     setStatus("Ошибка клонирования: " + e.message, true);
   } finally {
-    hideBusy();
+    forceHideBusy();
     progressBar.hide();
   }
 }
@@ -825,7 +825,7 @@ async function deleteLocalCopy(repo) {
   } catch (e) {
     setStatus("Ошибка удаления: " + e.message, true);
   } finally {
-    hideBusy();
+    forceHideBusy();
     progressBar.hide();
   }
 }
@@ -2146,13 +2146,14 @@ async function runPull(ctx) {
     try { await flushDirtyToLocal(); } catch (e) { console.warn(e); }
   }
 
-  showBusy("Обновление локальной копии…");
+  const busyToken = showBusy("Обновление локальной копии…");
   progressBar.show("Подтягивание изменений...");
+
   try {
     const res = await pullRepo(octokit, meta, {
       onProgress: (done, total) => {
         progressBar.update(done, total);
-        showBusy(`Обновление: ${done} / ${total}`);
+        updateBusyText(`Обновление: ${done} / ${total}`);
       },
     });
 
@@ -2169,17 +2170,21 @@ async function runPull(ctx) {
     if (res.conflicts?.length) {
       const lines = res.conflicts.slice(0, 10).map((c) => `• ${c.path} — ${c.reason}`).join("\n");
       const more = res.conflicts.length > 10 ? `\n…и ещё ${res.conflicts.length - 10}` : "";
-      hideBusy();
+      forceHideBusy();
+      progressBar.hide();
       await dialogs.alert({
         title: "Часть файлов не обновлена",
         text: `Локальные правки не затронуты в ${res.conflicts.length} файлах:\n\n${lines}${more}`,
       });
     }
   } catch (e) {
+    console.error("runPull error:", e);
     setStatus("Ошибка pull: " + e.message, true);
   } finally {
     pullInProgress = false;
-    hideBusy();
+    // Двойная страховка: сначала с токеном, потом принудительно.
+    hideBusy(busyToken);
+    forceHideBusy();
     progressBar.hide();
   }
 }
@@ -2465,7 +2470,7 @@ async function commit(message) {
   } catch (e) {
     setStatus("Ошибка коммита: " + e.message, true);
   } finally {
-    hideBusy();
+    forceHideBusy();
     progressBar.hide();
     commitScreen.setBusy(false);
   }
