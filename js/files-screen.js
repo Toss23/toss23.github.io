@@ -15,6 +15,7 @@ export function initFilesScreen({
   onOpenHistory,
   onRename,
   onDownload,
+  onMove,
   onMoveFile,
 }) {
   const list = $("entries-list");
@@ -28,6 +29,7 @@ export function initFilesScreen({
   const btnNewFolder = $("btn-new-folder");
   const btnDeleteMode = $("btn-delete-mode");
   const btnRename = $("btn-rename");
+  const btnMove = $("btn-move");
   const btnHistory = $("btn-history");
   const btnDeleteCancel = $("btn-delete-cancel");
   const btnDeleteConfirm = $("btn-delete-confirm");
@@ -43,8 +45,9 @@ export function initFilesScreen({
   if (btnHistory) btnHistory.addEventListener("click", () => onOpenHistory());
   if (btnRename) btnRename.addEventListener("click", () => onRename());
   if (btnDownload) btnDownload.addEventListener("click", () => onDownload());
+  if (btnMove) btnMove.addEventListener("click", () => onMove());
 
-  // ----- Внутренний drag-and-drop -----
+  // ----- Внутренний drag-and-drop (ПК) -----
   const INTERNAL_MIME = "application/x-internal-move";
 
   function isInternalDrag(e) {
@@ -64,15 +67,13 @@ export function initFilesScreen({
     });
     li.addEventListener("dragend", () => {
       li.classList.remove("dragging");
-      // На всякий случай снимаем подсветку со всех drop-целей.
       list.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
     });
   }
 
-  function attachDropTarget(li, destFolderPath, { allowInto = true } = {}) {
+  function attachDropTarget(li, destFolderPath) {
     li.addEventListener("dragover", (e) => {
       if (!isInternalDrag(e)) return;
-      if (!allowInto) return;
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = "move";
@@ -92,7 +93,6 @@ export function initFilesScreen({
                       e.dataTransfer.getData("text/plain");
       if (!srcPath) return;
 
-      // Вся защита — в moveEntry. Здесь только передаём.
       onMoveFile(srcPath, destFolderPath);
     });
   }
@@ -165,6 +165,7 @@ export function initFilesScreen({
         deleteCount.textContent = `Выбрано: ${count}`;
         btnDeleteConfirm.disabled = count === 0;
         if (btnRename) btnRename.disabled = count !== 1;
+        if (btnMove) btnMove.disabled = count !== 1;
         if (btnDownload) btnDownload.disabled = count === 0;
       }
 
@@ -245,7 +246,6 @@ export function initFilesScreen({
           li.classList.add("selected");
         }
 
-        // Папку тоже можно тащить (для перемещения).
         if (!selectionMode) {
           attachDraggable(li, fullPath);
           attachDropTarget(li, fullPath);
