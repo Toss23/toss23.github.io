@@ -889,6 +889,41 @@ async function handleUploadSelection(e) {
   await processUploadedEntries(entries);
 }
 
+async function computeUploadedSha(data, eol) {
+  if (data.isBinary) {
+    return gitBlobShaFromBase64(data.content);
+  }
+  return gitBlobSha(fromLf(data.content, eol || "\n"));
+}
+
+async function isUploadedSameAsExisting({ mode, cloned, path, data, fileEntry }) {
+  if (!fileEntry) return false;
+
+  let currentSha = null;
+  let currentIsBinary = !!fileEntry.isBinary;
+  let currentEol = fileEntry.eol || "\n";
+
+  if (mode === "local" && cloned) {
+    const entry = await storage.getFile(cloned.key, path);
+    if (!entry) return false;
+    currentSha = entry.sha;
+    currentIsBinary = !!entry.isBinary;
+    if (!currentIsBinary) {
+      currentEol = detectEol(entry.content) || "\n";
+    }
+  } else {
+    currentSha = fileEntry.sha;
+  }
+
+  if (!currentSha) return false;
+
+  // Тип должен совпадать.
+  if (currentIsBinary !== !!data.isBinary) return false;
+
+  const newSha = await computeUploadedSha(data, currentEol);
+  return newSha === currentSha;
+}
+
 async function processUploadedEntries(entries) {
   if (!entries.length) return;
 
@@ -942,6 +977,24 @@ async function processUploadedEntries(entries) {
         }
       }
 
+      // Читаем файл заранее — он нужен и для сравнения, и для сохранения.
+      const data = await readUploadedFile(entry.file);
+
+      // Если файл уже есть и его содержимое идентично загружаемому —
+      // не помечаем изменённым, просто идём дальше.
+      if (existsInFiles && !isDeleted) {
+        const existingEntry = getState().files.find((f) => f.path === path);
+        const same = await isUploadedSameAsExisting({
+          mode, cloned, path, data, fileEntry: existingEntry,
+        });
+        if (same) {
+          skipped++;
+          done++;
+          progressBar.update(done, entries.length);
+          continue;
+        }
+      }
+
       if (isDeleted) {
         removeDeleted(path);
         if (mode === "local" && cloned) {
@@ -959,7 +1012,6 @@ async function processUploadedEntries(entries) {
         if (i >= 0) added.splice(i, 1);
       }
 
-      const data = await readUploadedFile(entry.file);
       await saveUploadedEntry({ mode, cloned, path, data });
 
       added.push({
