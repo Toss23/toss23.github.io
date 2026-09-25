@@ -884,3 +884,50 @@ body {
     top: calc(50px + env(safe-area-inset-top));
   }
 }
+
+/* ============================================================
+   Drag-and-drop оверлей
+   ============================================================ */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(14, 99, 156, 0.25);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.drop-overlay-inner {
+  background: #252526;
+  border: 2px dashed #1177bb;
+  border-radius: 12px;
+  padding: 32px 48px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.drop-overlay-icon {
+  font-size: 48px;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+.drop-overlay-text {
+  font-size: 15px;
+  color: #ddd;
+}
+
+/* Dialog с 4+ кнопками — переносим по 2 в ряд */
+#dialog-actions {
+  flex-wrap: wrap;
+}
+#dialog-actions button {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+}
+
+@media (max-width: 500px) {
+  #dialog-actions button {
+    flex: 1 1 100%;
+  }
+}

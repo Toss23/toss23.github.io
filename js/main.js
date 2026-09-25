@@ -32,6 +32,7 @@ import { initHistoryScreen } from "./history-screen.js";
 import { initHistoryModal } from "./history-modal.js";
 import { initImageScreen } from "./image-screen.js";
 import { revertCommit } from "./revert.js";
+import { initDropZone } from "./drop-zone.js";
 import { SCREENS, isImagePath } from "./config.js";
 import * as storage from "./storage.js";
 import { cloneRepo, checkRemoteHead } from "./clone.js";
@@ -135,6 +136,14 @@ if (btnUpload) btnUpload.addEventListener("click", () => {
 
 if (uploadInput) uploadInput.addEventListener("change", handleUploadSelection);
 if (uploadFolderInput) uploadFolderInput.addEventListener("change", handleUploadSelection);
+
+const dropZone = initDropZone({
+  isActive: () => {
+    const s = getState();
+    return !!s.mode && s.screen === SCREENS.FILES;
+  },
+  onFiles: (entries) => processUploadedEntries(entries),
+});
 
 const editorScreen = initEditorScreen({
   onStateChange: handleEditorState,
@@ -803,34 +812,72 @@ async function handleUploadSelection(e) {
   const selected = [...(e.target.files || [])];
   if (!selected.length) return;
 
+  const entries = selected.map((file) => {
+    const rel = (file.webkitRelativePath || "").trim();
+    return { file, path: rel || file.name };
+  });
+
+  // Сброс сразу, чтобы повторный выбор того же файла сработал.
+  e.target.value = "";
+
+  await processUploadedEntries(entries);
+}
+
+async function processUploadedEntries(entries) {
+  if (!entries.length) return;
+
   const { mode, cloned, currentPath } = getState();
   if (!mode) return;
 
   const base = (currentPath || "").replace(/\/+$/, "");
 
-  progressBar.show(`Загрузка: 0 / ${selected.length}`);
+  progressBar.show(`Загрузка: 0 / ${entries.length}`);
+
   const added = [];
-  const skipped = [];
   let done = 0;
+  let skipped = 0;
+  let replaceAll = false;
+  let skipAll = false;
+  let cancelled = false;
 
   try {
-    for (const file of selected) {
-      const rel = (file.webkitRelativePath || "").trim();
-      const relPath = rel || file.name;
-      const clean = relPath.split("/").filter(Boolean).join("/");
+    for (const entry of entries) {
+      if (cancelled) break;
+
+      const rel = (entry.path || entry.file?.name || "").trim();
+      const clean = rel.split("/").filter(Boolean).join("/");
+      if (!clean) { done++; continue; }
       const path = base ? `${base}/${clean}` : clean;
 
-      const existsInFiles = getState().files.some((f) => f.path === path);
+      const currentFiles = getState().files;
+      const existsInFiles = currentFiles.some((f) => f.path === path);
       const existsInAdded = added.some((f) => f.path === path);
       const isDeleted = getState().deleted.has(path);
+      const conflict = (existsInFiles || existsInAdded) && !isDeleted;
 
-      if ((existsInFiles || existsInAdded) && !isDeleted) {
-        skipped.push(path);
-        done++;
-        progressBar.update(done, selected.length);
-        continue;
+      if (conflict) {
+        if (skipAll) {
+          skipped++;
+          done++;
+          progressBar.update(done, entries.length);
+          continue;
+        }
+        if (!replaceAll) {
+          const decision = await askReplace(path);
+          if (decision === "cancel") { cancelled = true; break; }
+          if (decision === "replace-all") replaceAll = true;
+          else if (decision === "skip-all") skipAll = true;
+          else if (decision === "skip") {
+            skipped++;
+            done++;
+            progressBar.update(done, entries.length);
+            continue;
+          }
+        }
+        // "replace" или "replace-all" — продолжаем и перезапишем.
       }
 
+      // Отменяем пометку удаления, если была.
       if (isDeleted) {
         removeDeleted(path);
         if (mode === "local" && cloned) {
@@ -840,16 +887,19 @@ async function handleUploadSelection(e) {
         }
       }
 
-      const data = await readUploadedFile(file);
-      console.log("[upload] parsed", path, {
-        isBinary: data.isBinary,
-        size: data.size,
-        sizeType: typeof data.size,
-        contentLength: data.content.length,
-      });
+      // Убираем старую запись из state.files при замене.
+      if (existsInFiles) {
+        setState({ files: getState().files.filter((f) => f.path !== path) });
+      }
+      if (existsInAdded) {
+        const i = added.findIndex((f) => f.path === path);
+        if (i >= 0) added.splice(i, 1);
+      }
+
+      const data = await readUploadedFile(entry.file);
       await saveUploadedEntry({ mode, cloned, path, data });
 
-      const entryForList = {
+      added.push({
         path,
         sha: null,
         baseSha: null,
@@ -857,14 +907,11 @@ async function handleUploadSelection(e) {
         isNew: true,
         isBinary: data.isBinary,
         eol: "\n",
-        // Держим содержимое binary-файла прямо в state.files,
-        // иначе в remote-режиме оно потеряется до коммита.
         content: data.isBinary ? data.content : null,
-      };
-      added.push(entryForList);
+      });
 
       done++;
-      progressBar.update(done, selected.length);
+      progressBar.update(done, entries.length);
     }
 
     if (added.length) {
@@ -873,28 +920,30 @@ async function handleUploadSelection(e) {
     }
 
     const parts = [`Загружено: ${added.length}`];
-    if (skipped.length) parts.push(`пропущено: ${skipped.length}`);
+    if (skipped) parts.push(`пропущено: ${skipped}`);
+    if (cancelled) parts.push("прервано");
     setStatus(parts.join(" · "));
-
-    if (skipped.length > 0 && skipped.length <= 10) {
-      await dialogs.alert({
-        title: "Часть файлов пропущена",
-        text: `Уже существуют:\n\n${skipped.map((p) => "• " + p).join("\n")}`,
-      });
-    } else if (skipped.length > 10) {
-      await dialogs.alert({
-        title: "Часть файлов пропущена",
-        text:
-          `Пропущено ${skipped.length} файлов, потому что они уже есть:\n\n` +
-          skipped.slice(0, 10).map((p) => "• " + p).join("\n") +
-          `\n…и ещё ${skipped.length - 10}`,
-      });
-    }
   } catch (err) {
     setStatus("Ошибка загрузки: " + err.message, true);
   } finally {
     progressBar.hide();
   }
+}
+
+function askReplace(path) {
+  return new Promise((resolve) => {
+    dialogs.choose({
+      title: "Файл уже существует",
+      text: path,
+      options: [
+        { text: "Заменить", kind: "primary", onClick: () => resolve("replace") },
+        { text: "Заменить все", onClick: () => resolve("replace-all") },
+        { text: "Пропустить", onClick: () => resolve("skip") },
+        { text: "Пропустить все", onClick: () => resolve("skip-all") },
+      ],
+      onDismiss: () => resolve("cancel"),
+    });
+  });
 }
 
 /* ---------- Просмотр бинарных файлов и изображений ---------- */

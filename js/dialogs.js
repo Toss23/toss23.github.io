@@ -20,7 +20,17 @@ export function initDialogs() {
 
   // Закрытие по клику на фон — только для alert-режима.
   modal.addEventListener("click", (e) => {
-    if (e.target === modal && context?.dismissible) close(true);
+    if (e.target !== modal) return;
+    if (!context?.dismissible) return;
+
+    if (context.onDismissRaw) {
+      modal.classList.add("hidden");
+      const cb = context.onDismissRaw;
+      context = null;
+      try { cb(); } catch (err) { console.error(err); }
+      return;
+    }
+    close(true);
   });
 
   function open({ title, text, buttons, dismissible = false, input = null }) {
@@ -75,11 +85,13 @@ export function initDialogs() {
 
   // Синхронный вариант без Promise — для случаев, когда важно
   // сохранить user gesture (например, вызов input.click()).
-  function openRaw({ title, text, buttons }) {
+  function openRaw({ title, text, buttons, onDismiss = null }) {
     titleEl.textContent = title || "";
     textEl.textContent = text || "";
     textEl.classList.toggle("hidden", !text);
     inputEl.classList.add("hidden");
+
+    context = { dismissible: !!onDismiss, onDismissRaw: onDismiss };
 
     clear(actionsEl);
     for (const b of buttons) {
@@ -90,6 +102,7 @@ export function initDialogs() {
       });
       btn.addEventListener("click", () => {
         modal.classList.add("hidden");
+        context = null;
         try { b.onClick(); } catch (e) { console.error(e); }
       });
       actionsEl.appendChild(btn);
@@ -98,10 +111,11 @@ export function initDialogs() {
   }
 
   return {
-    choose({ title = "Выбор", text = "", options = [] } = {}) {
+    choose({ title = "Выбор", text = "", options = [], onDismiss = null } = {}) {
       openRaw({
         title,
         text,
+        onDismiss,
         buttons: options.map((o) => ({
           text: o.text,
           kind: o.kind,
