@@ -1,37 +1,50 @@
+import { EditorView, basicSetup } from "https://esm.sh/codemirror@6";
+import { EditorState } from "https://esm.sh/@codemirror/state@6";
+import { syntaxHighlighting } from "https://esm.sh/@codemirror/language@6";
+import { csharp } from "https://esm.sh/@codemirror/lang-csharp@6";
+import { csharpHighlightStyle, csharpEditorTheme } from "@core/csharp-theme.js";
 import { $ } from "@core/dom.js";
 import { UI } from "@core/config.js";
 import { gitBlobSha } from "@core/git-sha.js";
 import { fromLf } from "@core/encoding.js";
 
 export function initEditorScreen({ onStateChange, onSave, onRevert }) {
-  const textarea = $("file-content");
+  const container = $("file-content");
   const pathLabel = $("file-path");
   const marker = $("dirty-marker");
   const saveBtn = $("save-file");
   const revertBtn = $("revert-file");
 
+  let view = null;
   let base = null;
   let savedLf = null;
   let timer;
 
-  textarea.addEventListener("input", () => {
-    clearTimeout(timer);
-    timer = setTimeout(check, UI.DIRTY_DEBOUNCE_MS);
-  });
-
-  saveBtn.addEventListener("click", () => {
-    if (!base) return;
-    onSave?.(base.path, textarea.value);
-  });
-
-  revertBtn.addEventListener("click", () => {
-    if (!base) return;
-    onRevert?.(base.path);
-  });
+  function createView(doc = "", readOnly = false) {
+    if (view) {
+      view.destroy();
+      view = null;
+    }
+    const extensions = [
+      basicSetup,
+      csharp(),
+      syntaxHighlighting(csharpHighlightStyle),
+      csharpEditorTheme,
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          clearTimeout(timer);
+          timer = setTimeout(check, UI.DIRTY_DEBOUNCE_MS);
+        }
+      }),
+    ];
+    if (readOnly) extensions.push(EditorView.editable.of(false));
+    const state = EditorState.create({ doc, extensions });
+    view = new EditorView({ state, parent: container });
+  }
 
   async function check() {
-    if (!base) return;
-    const current = textarea.value;
+    if (!base || !view) return;
+    const current = view.state.doc.toString();
     const contentOrig = fromLf(current, base.baseEol);
     const sha = await gitBlobSha(contentOrig);
     const modified = sha !== base.baseSha;
@@ -45,13 +58,24 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     onStateChange?.(base.path, { modified, unsaved, current });
   }
 
+  saveBtn.addEventListener("click", () => {
+    if (!base || !view) return;
+    onSave?.(base.path, view.state.doc.toString());
+  });
+
+  revertBtn.addEventListener("click", () => {
+    if (!base) return;
+    onRevert?.(base.path);
+  });
+
+  createView("");
+
   return {
     open({ path, baseSha, eol, content }) {
       base = { path, baseSha, baseEol: eol };
       savedLf = content;
       pathLabel.textContent = path;
-      textarea.value = content;
-      textarea.disabled = false;
+      createView(content);
       clearTimeout(timer);
       check();
     },
@@ -59,8 +83,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       base = null;
       savedLf = null;
       pathLabel.textContent = "";
-      textarea.value = "";
-      textarea.disabled = true;
+      createView("");
       marker.classList.add("hidden");
       saveBtn.disabled = true;
       saveBtn.classList.remove("active");
@@ -68,16 +91,16 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       clearTimeout(timer);
     },
     markSaved(path) {
-      if (!base) return;
+      if (!base || !view) return;
       if (path && base.path !== path) return;
-      savedLf = textarea.value;
+      savedLf = view.state.doc.toString();
       check();
     },
     revert({ content, baseSha }) {
-      if (!base) return;
+      if (!base || !view) return;
       savedLf = content;
       base.baseSha = baseSha;
-      textarea.value = content;
+      createView(content);
       check();
     },
     updateBaseSha(newSha) {
@@ -93,8 +116,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       base = null;
       savedLf = null;
       pathLabel.textContent = path;
-      textarea.value = `📦 Бинарный файл — ${sizeText}\n\nПросмотр и редактирование недоступны.`;
-      textarea.disabled = true;
+      createView("📦 Бинарный файл — " + sizeText + "\n\nПросмотр и редактирование недоступны.", true);
       marker.classList.add("hidden");
       saveBtn.disabled = true;
       saveBtn.classList.remove("active");

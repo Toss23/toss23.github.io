@@ -276,19 +276,16 @@ body {
    ============================================================ */
 #file-content {
   flex: 1;
-  width: 100%;
-  border: none;
-  outline: none;
-  resize: none;
-  background: #1e1e1e;
-  color: #ddd;
-  padding: 12px;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 14px;
-  line-height: 1.55;
   min-height: 0;
+  overflow: hidden;
+  position: relative;
 }
-#file-content:disabled { color: #555; }
+#file-content .cm-editor {
+  height: 100%;
+}
+#file-content .cm-scroller {
+  overflow: auto;
+}
 
 .file-path {
   flex: 1;
