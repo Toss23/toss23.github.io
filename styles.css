@@ -1064,3 +1064,41 @@ body {
   width: 100%;
   margin-top: 4px;
 }
+
+/* ============================================================
+   Оверлей блокировки UI
+   ============================================================ */
+.busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  cursor: wait;
+  user-select: none;
+  touch-action: none;
+}
+.busy-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #1177bb;
+  border-radius: 50%;
+  animation: busy-spin 0.9s linear infinite;
+}
+@keyframes busy-spin {
+  to { transform: rotate(360deg); }
+}
+.busy-text {
+  color: #ddd;
+  font-size: 14px;
+  font-family: -apple-system, system-ui, sans-serif;
+  text-align: center;
+  max-width: 80vw;
+  padding: 0 16px;
+}

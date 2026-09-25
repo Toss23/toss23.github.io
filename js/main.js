@@ -28,6 +28,7 @@ import { initDialogs } from "@ui/dialogs.js";
 import { initProgressBar } from "@ui/progress-bar.js";
 import { initFullscreen } from "@ui/fullscreen.js";
 import { initDropZone } from "@ui/drop-zone.js";
+import { showBusy, hideBusy } from "@ui/busy.js";
 import { initHistoryModal } from "@ui/history-modal.js";
 import { initRepoActionsModal } from "@ui/repo-actions-modal.js";
 import { initUpdateModal } from "@ui/update-modal.js";
@@ -194,6 +195,7 @@ const imageScreen = initImageScreen();
 
 let localWatchTimer = null;
 let dismissedRemoteSha = null;
+let pullInProgress = false;
 
 function startLocalWatch() {
   stopLocalWatch();
@@ -209,12 +211,20 @@ function stopLocalWatch() {
 }
 
 async function localWatchTick() {
+  // Идёт pull — не открываем окно повторно.
+  if (pullInProgress) return;
+
   const { mode, cloned, screen, octokit, repo, branch } = getState();
   if (mode !== "local" || !cloned || !octokit || !repo) return;
   if (screen !== SCREENS.FILES && screen !== SCREENS.EDITOR && screen !== SCREENS.HISTORY) return;
 
+  // Не открываем новое окно, пока висит предыдущее.
   const modal = document.getElementById("update-modal");
   if (modal && !modal.classList.contains("hidden")) return;
+
+  // Оверлей блокировки — тоже стоп.
+  const busy = document.getElementById("busy-overlay");
+  if (busy && !busy.classList.contains("hidden")) return;
 
   try {
     const remoteSha = await checkRemoteHead(octokit, {
@@ -753,6 +763,7 @@ async function cloneAndOpen(repo) {
   const persistent = await storage.requestPersistent();
   if (!persistent) console.warn("Постоянное хранилище не предоставлено");
 
+  showBusy("Клонирование репозитория…");
   progressBar.show("Клонирование: подготовка...");
   setStatus("");
   try {
@@ -791,6 +802,7 @@ async function cloneAndOpen(repo) {
   } catch (e) {
     setStatus("Ошибка клонирования: " + e.message, true);
   } finally {
+    hideBusy();
     progressBar.hide();
   }
 }
@@ -798,6 +810,7 @@ async function cloneAndOpen(repo) {
 async function deleteLocalCopy(repo) {
   const key = storage.makeRepoKey(repo.owner.login, repo.name, repo.default_branch);
 
+  showBusy("Удаление локальной копии…");
   progressBar.showIndeterminate("Удаление локальной копии...");
   try {
     await new Promise((r) => setTimeout(r, 120));
@@ -812,6 +825,7 @@ async function deleteLocalCopy(repo) {
   } catch (e) {
     setStatus("Ошибка удаления: " + e.message, true);
   } finally {
+    hideBusy();
     progressBar.hide();
   }
 }
@@ -2126,14 +2140,20 @@ async function runPull(ctx) {
   const { repo, meta } = ctx;
   const { octokit, mode, cloned } = getState();
 
+  pullInProgress = true;
+
   if (mode === "local" && cloned) {
     try { await flushDirtyToLocal(); } catch (e) { console.warn(e); }
   }
 
+  showBusy("Обновление локальной копии…");
   progressBar.show("Подтягивание изменений...");
   try {
     const res = await pullRepo(octokit, meta, {
-      onProgress: (done, total) => progressBar.update(done, total),
+      onProgress: (done, total) => {
+        progressBar.update(done, total);
+        showBusy(`Обновление: ${done} / ${total}`);
+      },
     });
 
     await enterLocalMode(repo, { ...meta, headSha: res.newHeadSha });
@@ -2149,6 +2169,7 @@ async function runPull(ctx) {
     if (res.conflicts?.length) {
       const lines = res.conflicts.slice(0, 10).map((c) => `• ${c.path} — ${c.reason}`).join("\n");
       const more = res.conflicts.length > 10 ? `\n…и ещё ${res.conflicts.length - 10}` : "";
+      hideBusy();
       await dialogs.alert({
         title: "Часть файлов не обновлена",
         text: `Локальные правки не затронуты в ${res.conflicts.length} файлах:\n\n${lines}${more}`,
@@ -2157,6 +2178,8 @@ async function runPull(ctx) {
   } catch (e) {
     setStatus("Ошибка pull: " + e.message, true);
   } finally {
+    pullInProgress = false;
+    hideBusy();
     progressBar.hide();
   }
 }
@@ -2343,6 +2366,7 @@ async function commit(message) {
 
   commitScreen.setBusy(true);
   setStatus("Коммит...");
+  showBusy("Отправка коммита…");
   progressBar.show(`Коммит: 0 / ${payload.length + 3}`);
   try {
     const newHeadSha = await commitFiles(octokit, {
@@ -2441,6 +2465,7 @@ async function commit(message) {
   } catch (e) {
     setStatus("Ошибка коммита: " + e.message, true);
   } finally {
+    hideBusy();
     progressBar.hide();
     commitScreen.setBusy(false);
   }
