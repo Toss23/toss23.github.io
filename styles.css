@@ -417,13 +417,14 @@ body {
 /* Токены подсветки C# (Darcula / Rider) */
 .tok-keyword { color: #CC7832; }
 .tok-control { color: #CC7832; }
-.tok-type { color: #A9B7C6; }
-.tok-interface { color: #4FC3F7; }
-.tok-field { color: #9876AA; }
-.tok-property { color: #9876AA; }
-.tok-event { color: #C79BE8; }
+.tok-type { color: #4FC3F7; }
+.tok-interface { color: #4EC9B0; }
 .tok-attribute { color: #BBB529; }
 .tok-method { color: #FFC66D; }
+.tok-arg { color: #C586C0; }
+.tok-field { color: #A9B7C6; }
+.tok-property { color: #A9B7C6; }
+.tok-event { color: #C79BE8; }
 .tok-string { color: #6A8759; }
 .tok-char { color: #6A8759; }
 .tok-comment { color: #808080; font-style: italic; }

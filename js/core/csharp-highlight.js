@@ -14,12 +14,6 @@ const KEYWORDS = new Set([
   "get","set","value","where","when"
 ]);
 
-const MODIFIERS = new Set([
-  "public","private","protected","internal","static","readonly","const",
-  "sealed","abstract","virtual","override","new","partial","extern",
-  "unsafe","volatile","event","async","required"
-]);
-
 const TYPE_AFTER = new Set([
   "new","typeof","nameof","is","as","sizeof","default","in",
   "out","ref","stackalloc"
@@ -256,19 +250,63 @@ export function tokenize(code) {
     if (/^[A-Z][A-Za-z0-9_]*$/.test(t.text)) { t.type = "type"; continue; }
   }
 
-  // ===== Проход 3: поля класса, свойства, события =====
-  const classMembers = findClassMembers(tokens);
-  for (const t of tokens) {
-    if (t.type === "ident" || t.type === "type") {
-      const kind = classMembers.get(t.text);
-      if (kind) t.type = kind;
+  // ===== Проход 3: аргументы методов и конструкторов =====
+  for (let k = 0; k < tokens.length; k++) {
+    const t = tokens[k];
+    if (t.type !== "method") continue;
+    let i = k + 1;
+    while (i < tokens.length && (tokens[i].type === "ws" || tokens[i].type === "comment")) i++;
+    if (i >= tokens.length || tokens[i].type !== "op" || tokens[i].text !== "(") continue;
+
+    let depth = 1;
+    let j = i + 1;
+    while (j < tokens.length && depth > 0) {
+      const tk = tokens[j];
+      if (tk.type === "op" && tk.text === "(") depth++;
+      else if (tk.type === "op" && tk.text === ")") depth--;
+      if (depth === 0) break;
+      j++;
+    }
+    if (depth > 0) continue;
+
+    let after = j + 1;
+    while (after < tokens.length && (tokens[after].type === "ws" || tokens[after].type === "comment")) after++;
+    const afterTok = after < tokens.length ? tokens[after] : null;
+    const isDeclaration = afterTok && afterTok.type === "op" &&
+      (afterTok.text === "{" || afterTok.text === "=>");
+    if (!isDeclaration) continue;
+
+    for (let x = i + 1; x < j; x++) {
+      const tk = tokens[x];
+      if (tk.type === "ident") tk.type = "arg";
+    }
+  }
+
+  // ===== Проход 4: события (объявления на уровне класса) =====
+  const classBodyDepth = findClassBodyDepth(tokens);
+  if (classBodyDepth >= 0) {
+    const depths = computeDepths(tokens);
+    for (let k = 0; k < tokens.length; k++) {
+      if (depths[k] !== classBodyDepth) continue;
+      const t = tokens[k];
+      if (t.type !== "ident" && t.type !== "type") continue;
+      let scan = k - 1;
+      let isEvent = false;
+      while (scan >= 0) {
+        const sk = tokens[scan];
+        if (sk.type === "op" && (sk.text === ";" || sk.text === "{" || sk.text === "}")) break;
+        if (sk.type === "keyword" && sk.text === "event") { isEvent = true; break; }
+        scan--;
+      }
+      if (isEvent) t.type = "event";
+      else if (t.type === "type") t.type = "ident";
     }
   }
 
   return tokens;
 }
 
-function findClassMembers(tokens) {
+function computeDepths(tokens) {
   const n = tokens.length;
   const depths = new Array(n).fill(0);
   let d = 0;
@@ -278,89 +316,22 @@ function findClassMembers(tokens) {
     depths[k] = d;
     if (t.type === "op" && t.text === "{") d++;
   }
+  return depths;
+}
 
-  let classBodyDepth = -1;
+function findClassBodyDepth(tokens) {
+  const n = tokens.length;
+  const depths = computeDepths(tokens);
   for (let k = 0; k < n; k++) {
     const t = tokens[k];
     if (t.type !== "keyword") continue;
     if (t.text !== "class" && t.text !== "struct" && t.text !== "record") continue;
     let j = k + 1;
     while (j < n && !(tokens[j].type === "op" && tokens[j].text === "{")) j++;
-    if (j >= n) break;
-    classBodyDepth = depths[j] + 1;
-    break;
+    if (j >= n) return -1;
+    return depths[j] + 1;
   }
-  if (classBodyDepth < 0) return new Map();
-
-  function nextNonWs(i) {
-    let j = i + 1;
-    while (j < n && (tokens[j].type === "ws" || tokens[j].type === "comment")) j++;
-    return j < n ? j : -1;
-  }
-
-  function skipBack(i) {
-    let j = i;
-    while (j >= 0 && (tokens[j].type === "ws" || tokens[j].type === "comment")) j--;
-    while (j >= 0 && tokens[j].type === "op" && tokens[j].text === ">") {
-      let depth = 1; j--;
-      while (j >= 0 && depth > 0) {
-        if (tokens[j].type === "op" && tokens[j].text === ">") depth++;
-        else if (tokens[j].type === "op" && tokens[j].text === "<") depth--;
-        j--;
-      }
-      while (j >= 0 && (tokens[j].type === "ws" || tokens[j].type === "comment")) j--;
-    }
-    while (j >= 0 && tokens[j].type === "op" && tokens[j].text === "]") {
-      let depth = 1; j--;
-      while (j >= 0 && depth > 0) {
-        if (tokens[j].type === "op" && tokens[j].text === "]") depth++;
-        else if (tokens[j].type === "op" && tokens[j].text === "[") depth--;
-        j--;
-      }
-      while (j >= 0 && (tokens[j].type === "ws" || tokens[j].type === "comment")) j--;
-    }
-    return j;
-  }
-
-  const map = new Map();
-
-  for (let k = 0; k < n; k++) {
-    if (depths[k] !== classBodyDepth) continue;
-    const t = tokens[k];
-    if (t.type !== "ident" && t.type !== "type") continue;
-
-    const nx = nextNonWs(k);
-    if (nx < 0) continue;
-    const ntok = tokens[nx];
-    if (ntok.type === "op" && ntok.text === "(") continue;
-
-    const okNext = ntok.type === "op" && (
-      ntok.text === ";" || ntok.text === "=" ||
-      ntok.text === "{" || ntok.text === "," || ntok.text === "=>"
-    );
-    if (!okNext) continue;
-
-    const pj = skipBack(k - 1);
-    if (pj < 0) continue;
-    const ptok = tokens[pj];
-    if (ptok.type === "op" && ptok.text === ".") continue;
-    if (ptok.type === "op") continue;
-
-    let isEvent = false;
-    let scan = k - 1;
-    while (scan >= 0) {
-      const sk = tokens[scan];
-      if (sk.type === "op" && (sk.text === ";" || sk.text === "{" || sk.text === "}")) break;
-      if (sk.type === "keyword" && sk.text === "event") { isEvent = true; break; }
-      scan--;
-    }
-
-    if (isEvent) map.set(t.text, "event");
-    else if (/^_/.test(t.text) || /^[a-z]/.test(t.text)) map.set(t.text, "field");
-    else map.set(t.text, "property");
-  }
-
-  return map;
+  return -1;
 }
 
 export function renderTokens(tokens) {
@@ -375,6 +346,7 @@ export function renderTokens(tokens) {
       case "interface": out += '<span class="tok-interface">' + text + "</span>"; break;
       case "attribute": out += '<span class="tok-attribute">' + text + "</span>"; break;
       case "method": out += '<span class="tok-method">' + text + "</span>"; break;
+      case "arg": out += '<span class="tok-arg">' + text + "</span>"; break;
       case "field": out += '<span class="tok-field">' + text + "</span>"; break;
       case "property": out += '<span class="tok-property">' + text + "</span>"; break;
       case "event": out += '<span class="tok-event">' + text + "</span>"; break;
