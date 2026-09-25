@@ -2,6 +2,15 @@ import { $, el, clear, option } from "./dom.js";
 import { listDirectory } from "./tree.js";
 import { formatSize } from "./format.js";
 
+// Тач-устройство: не разрешаем HTML5 drag — на Android он конфликтует с long-press.
+const isTouchDevice = (() => {
+  try {
+    return window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  } catch {
+    return "ontouchstart" in window;
+  }
+})();
+
 export function initFilesScreen({
   onOpenFolder,
   onOpenFile,
@@ -60,60 +69,62 @@ export function initFilesScreen({
   let touchTargetPath = null;
   let longPressFired = false;
 
-  list.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) return;
-    const li = e.target.closest("li[data-path]");
-    if (!li) return;
-    if (li.classList.contains("updir")) return;
+  if (isTouchDevice) {
+    list.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) return;
+      const li = e.target.closest("li[data-path]");
+      if (!li) return;
+      if (li.classList.contains("updir")) return;
 
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    touchTargetPath = li.dataset.path;
-    longPressFired = false;
-
-    if (touchTimer) clearTimeout(touchTimer);
-    touchTimer = setTimeout(() => {
-      touchTimer = null;
-      longPressFired = true;
-      suppressClickUntil = Date.now() + 500;
-
-      if (navigator.vibrate) {
-        try { navigator.vibrate(30); } catch {}
-      }
-
-      onLongPressSelect?.(touchTargetPath);
-    }, 500);
-  }, { passive: true });
-
-  list.addEventListener("touchmove", (e) => {
-    if (!touchTimer) return;
-    const dx = e.touches[0].clientX - touchStartX;
-    const dy = e.touches[0].clientY - touchStartY;
-    if (dx * dx + dy * dy > 100) {
-      clearTimeout(touchTimer);
-      touchTimer = null;
-    }
-  }, { passive: true });
-
-  list.addEventListener("touchend", (e) => {
-    if (touchTimer) {
-      clearTimeout(touchTimer);
-      touchTimer = null;
-    }
-    if (longPressFired) {
-      e.preventDefault();
-      e.stopPropagation();
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchTargetPath = li.dataset.path;
       longPressFired = false;
-    }
-  });
 
-  list.addEventListener("touchcancel", () => {
-    if (touchTimer) {
-      clearTimeout(touchTimer);
-      touchTimer = null;
-    }
-    longPressFired = false;
-  });
+      if (touchTimer) clearTimeout(touchTimer);
+      touchTimer = setTimeout(() => {
+        touchTimer = null;
+        longPressFired = true;
+        suppressClickUntil = Date.now() + 500;
+
+        if (navigator.vibrate) {
+          try { navigator.vibrate(30); } catch {}
+        }
+
+        onLongPressSelect?.(touchTargetPath);
+      }, 500);
+    }, { passive: true });
+
+    list.addEventListener("touchmove", (e) => {
+      if (!touchTimer) return;
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+      if (dx * dx + dy * dy > 100) {
+        clearTimeout(touchTimer);
+        touchTimer = null;
+      }
+    }, { passive: true });
+
+    list.addEventListener("touchend", (e) => {
+      if (touchTimer) {
+        clearTimeout(touchTimer);
+        touchTimer = null;
+      }
+      if (longPressFired) {
+        e.preventDefault();
+        e.stopPropagation();
+        longPressFired = false;
+      }
+    });
+
+    list.addEventListener("touchcancel", () => {
+      if (touchTimer) {
+        clearTimeout(touchTimer);
+        touchTimer = null;
+      }
+      longPressFired = false;
+    });
+  }
 
   function clickGuard(fn) {
     return (e) => {
@@ -136,6 +147,7 @@ export function initFilesScreen({
   }
 
   function attachDraggable(li, path) {
+    if (isTouchDevice) return;
     li.draggable = true;
     li.addEventListener("dragstart", (e) => {
       e.stopPropagation();
@@ -151,6 +163,7 @@ export function initFilesScreen({
   }
 
   function attachDropTarget(li, destFolderPath) {
+    if (isTouchDevice) return;
     li.addEventListener("dragover", (e) => {
       if (!isInternalDrag(e)) return;
       e.preventDefault();

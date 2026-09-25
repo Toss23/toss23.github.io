@@ -7,16 +7,22 @@ export function listDirectory(files, currentPath, deletedSet) {
 
   for (const f of files) {
     if (deletedSet && deletedSet.has(f.path)) continue;
-    // .gitkeep — служебный маркер пустой папки, в списке не показываем.
-    if (f.path.split("/").pop() === ".gitkeep") continue;
-    if (prefix && !f.path.startsWith(prefix)) continue;
 
     const rest = f.path.slice(prefix.length);
     if (!rest) continue;
 
     const slash = rest.indexOf("/");
-    if (slash === -1) filesHere.push(f);
-    else folders.add(rest.slice(0, slash));
+    if (slash === -1) {
+      // Файл прямо в текущей папке.
+      // .gitkeep показываем только как маркер существования папки,
+      // в списке файлов его не выводим.
+      if (f.path.split("/").pop() === ".gitkeep") continue;
+      filesHere.push(f);
+    } else {
+      // Файл внутри подпапки — сама подпапка всегда должна быть видна,
+      // даже если в ней только .gitkeep.
+      folders.add(rest.slice(0, slash));
+    }
   }
 
   return {
