@@ -231,6 +231,8 @@ export function tokenize(code) {
   }
 
   // ===== Проход 2: методы, типы, интерфейсы =====
+  // После точки НЕ подсвечиваем: Result, Value, Character — всё нейтральное.
+  // Типы в начале выражения (Console, String) уже получили type в первом проходе.
   for (let k = 0; k < tokens.length; k++) {
     const t = tokens[k];
     if (t.type !== "ident") continue;
@@ -241,18 +243,23 @@ export function tokenize(code) {
     const prev = p >= 0 ? tokens[p] : null;
     const next = nx < tokens.length ? tokens[nx] : null;
 
+    // Метод — идентификатор перед (
     if (next && next.text === "(") { t.type = "method"; continue; }
-    if (prev && prev.type === "op" && prev.text === ".") {
-      if (isInterfaceName(t.text)) t.type = "interface";
-      else if (/^[A-Z]/.test(t.text)) t.type = "type";
-      continue;
-    }
+
+    // После точки — оставляем как есть
+    if (prev && prev.type === "op" && prev.text === ".") continue;
+
+    // После new/typeof — тип
     if (prev && prev.type === "keyword" && TYPE_AFTER.has(prev.text)) {
       if (isInterfaceName(t.text)) t.type = "interface";
       else t.type = "type";
       continue;
     }
+
+    // Заглавная I+заглавная — интерфейс
     if (isInterfaceName(t.text)) { t.type = "interface"; continue; }
+
+    // Заглавная в начале выражения — тип
     if (/^[A-Z][A-Za-z0-9_]*$/.test(t.text)) { t.type = "type"; continue; }
   }
 
@@ -337,9 +344,7 @@ function refineClassMembers(tokens) {
     const t = tokens[k];
     const d = depths[k];
 
-    if (d !== classBodyDepth) {
-      continue;
-    }
+    if (d !== classBodyDepth) continue;
 
     if (t.type === "op" && t.text === "{") {
       if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0));
