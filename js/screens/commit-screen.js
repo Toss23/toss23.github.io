@@ -1,6 +1,7 @@
 import { $, el, clear } from "@core/dom.js";
 import { UI } from "@core/config.js";
 import { computeLineDiff, renderDiffHtml } from "@core/diff.js";
+import { attachBackdropDismiss } from "@ui/modal-dismiss.js";
 
 export function initCommitScreen({ onSubmit, onCancel, onRevertAll }) {
   const modal = $("commit-modal");
@@ -25,6 +26,11 @@ export function initCommitScreen({ onSubmit, onCancel, onRevertAll }) {
   }
 
   cancelBtn.addEventListener("click", () => {
+    modal.classList.add("hidden");
+    onCancel?.();
+  });
+
+  attachBackdropDismiss(modal, () => {
     modal.classList.add("hidden");
     onCancel?.();
   });

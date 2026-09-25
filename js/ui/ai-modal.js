@@ -1,4 +1,5 @@
 import { $, el, clear } from "@core/dom.js";
+import { attachBackdropDismiss } from "@ui/modal-dismiss.js";
 
 export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFullInstructions }) {
   const modal = $("ai-modal");
@@ -21,6 +22,7 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFull
 
   function close() { modal.classList.add("hidden"); }
   if (closeBtn) closeBtn.addEventListener("click", close);
+  attachBackdropDismiss(modal, close);
 
   function openMapPreview(content, onDownload) {
     if (!mapModal || !mapBody) return;
@@ -41,6 +43,7 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFull
 
   if (mapClose) mapClose.addEventListener("click", closeMapPreview);
   if (mapCancel) mapCancel.addEventListener("click", closeMapPreview);
+  attachBackdropDismiss(mapModal, closeMapPreview);
 
   if (btnMap && onGenerateMap) {
     btnMap.addEventListener("click", () => onGenerateMap());

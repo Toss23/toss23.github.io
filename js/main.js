@@ -1496,6 +1496,11 @@ function initMoveModal() {
 
   if (closeBtn) closeBtn.addEventListener("click", () => close(null));
 
+  modal.addEventListener("click", (e) => {
+    if (e.target !== modal) return;
+    close(null);
+  });
+
   return {
     open({ title, options }) {
       return new Promise((resolve) => {

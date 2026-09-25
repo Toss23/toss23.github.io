@@ -1,5 +1,6 @@
 import { $ } from "@core/dom.js";
 import { formatSize } from "@core/format.js";
+import { attachBackdropDismiss } from "@ui/modal-dismiss.js";
 
 export function initRepoActionsModal({
   onOpenRemote, onOpenLocal, onClone, onDeleteLocal, onDownloadZip, dialogs,
@@ -31,6 +32,7 @@ export function initRepoActionsModal({
     current && onClone(current);
   });
   btnCancel.addEventListener("click", () => modal.classList.add("hidden"));
+  attachBackdropDismiss(modal, () => modal.classList.add("hidden"));
 
   if (btnZip) btnZip.addEventListener("click", () => {
     modal.classList.add("hidden");

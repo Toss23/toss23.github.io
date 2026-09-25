@@ -1,5 +1,6 @@
 import { $, el, clear } from "@core/dom.js";
 import { computeLineDiff, renderDiffHtml } from "@core/diff.js";
+import { attachBackdropDismiss } from "@ui/modal-dismiss.js";
 
 export function initHistoryModal({ onRevert } = {}) {
   const modal = $("history-modal");
@@ -11,6 +12,11 @@ export function initHistoryModal({ onRevert } = {}) {
   let currentCommit = null;
 
   closeBtn.addEventListener("click", () => {
+    modal.classList.add("hidden");
+    currentCommit = null;
+  });
+
+  attachBackdropDismiss(modal, () => {
     modal.classList.add("hidden");
     currentCommit = null;
   });

@@ -1,4 +1,5 @@
 import { $ } from "@core/dom.js";
+import { attachBackdropDismiss } from "@ui/modal-dismiss.js";
 
 export function initUpdateModal({ onUpdate, onKeepLocal }) {
   const modal = $("update-modal");
@@ -11,6 +12,11 @@ export function initUpdateModal({ onUpdate, onKeepLocal }) {
 
   btnYes.addEventListener("click", () => { modal.classList.add("hidden"); ctx && onUpdate(ctx); });
   btnNo.addEventListener("click", () => { modal.classList.add("hidden"); ctx && onKeepLocal(ctx); });
+
+  attachBackdropDismiss(modal, () => {
+    modal.classList.add("hidden");
+    ctx = null;
+  });
 
   return {
     open(context) {
