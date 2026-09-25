@@ -4,40 +4,44 @@ import {
   setDeleted, removeDeleted, clearDeleted,
   setSelectionMode, toggleSelection,
   setRemoteChanges, clearRemoteChanges,
-} from "./store.js";
-import { loadToken, saveToken, clearToken, createClient, fetchUser } from "./auth.js";
+} from "@core/store.js";
+import { gitBlobSha, gitBlobShaFromBase64 } from "@core/git-sha.js";
+import { detectEol, toLf, fromLf, base64ToBytes, bytesToBase64 } from "@core/encoding.js";
+import { formatSize } from "@core/format.js";
+
+import { loadToken, saveToken, clearToken, createClient, fetchUser } from "@api/auth.js";
 import {
   listRepos, listBranches, listFiles, getFile,
   compareCommits, listCommits, getCommit, getBlobRaw,
   initEmptyRepo,
-} from "./github.js";
-import { commitFiles } from "./commit.js";
-import { gitBlobSha, gitBlobShaFromBase64 } from "./git-sha.js";
-import { detectEol, toLf, fromLf, base64ToBytes, bytesToBase64 } from "./encoding.js";
-import { readUploadedFile, saveUploadedEntry } from "./upload.js";
-import { initStatus, setStatus } from "./status.js";
-import { initHeader } from "./header.js";
-import { initNav } from "./nav.js";
-import { initAuthScreen } from "./auth-screen.js";
-import { initReposScreen } from "./repos-screen.js";
-import { initFilesScreen } from "./files-screen.js";
-import { initEditorScreen } from "./editor-screen.js";
-import { initCommitScreen } from "./commit-screen.js";
-import { initFullscreen } from "./fullscreen.js";
-import { initProgressBar } from "./progress-bar.js";
-import { initDialogs } from "./dialogs.js";
-import { initRepoActionsModal } from "./repo-actions-modal.js";
-import { initUpdateModal } from "./update-modal.js";
-import { initHistoryScreen } from "./history-screen.js";
-import { initHistoryModal } from "./history-modal.js";
-import { initImageScreen } from "./image-screen.js";
-import { initDropZone } from "./drop-zone.js";
-import { revertCommit } from "./revert.js";
-import { SCREENS, isImagePath } from "./config.js";
-import * as storage from "./storage.js";
-import { cloneRepo, checkRemoteHead } from "./clone.js";
-import { pullRepo } from "./pull.js";
-import { formatSize } from "./format.js";
+} from "@api/github.js";
+import { commitFiles } from "@api/commit.js";
+import { readUploadedFile, saveUploadedEntry } from "@api/upload.js";
+import { cloneRepo, checkRemoteHead } from "@api/clone.js";
+import { pullRepo } from "@api/pull.js";
+import { revertCommit } from "@api/revert.js";
+
+import { initStatus, setStatus } from "@ui/status.js";
+import { initHeader } from "@ui/header.js";
+import { initNav } from "@ui/nav.js";
+import { initDialogs } from "@ui/dialogs.js";
+import { initProgressBar } from "@ui/progress-bar.js";
+import { initFullscreen } from "@ui/fullscreen.js";
+import { initDropZone } from "@ui/drop-zone.js";
+import { initHistoryModal } from "@ui/history-modal.js";
+import { initRepoActionsModal } from "@ui/repo-actions-modal.js";
+import { initUpdateModal } from "@ui/update-modal.js";
+
+import { initAuthScreen } from "@screens/auth-screen.js";
+import { initReposScreen } from "@screens/repos-screen.js";
+import { initFilesScreen } from "@screens/files-screen.js";
+import { initEditorScreen } from "@screens/editor-screen.js";
+import { initHistoryScreen } from "@screens/history-screen.js";
+import { initImageScreen } from "@screens/image-screen.js";
+import { initCommitScreen } from "@screens/commit-screen.js";
+
+import { SCREENS, isImagePath } from "@core/config.js";
+import * as storage from "@core/storage.js";
 
 /* ---------- Утилиты ---------- */
 
