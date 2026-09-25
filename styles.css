@@ -277,6 +277,107 @@ body {
 /* ============================================================
    Редактор с overlay-подсветкой
    ============================================================ */
+/* ============================================================
+   Тулбар редактора
+   ============================================================ */
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #252526;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+.editor-toolbar .icon-btn {
+  font-size: 12.5px;
+  padding: 6px 10px;
+  min-height: 34px;
+}
+
+.editor-find-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #2d2d2d;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+  align-items: center;
+}
+.editor-find-input,
+.editor-replace-input {
+  flex: 1 1 160px;
+  min-width: 0;
+  background: #1e1e1e;
+  color: #ddd;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+.editor-find-input:focus,
+.editor-replace-input:focus { border-color: #0e639c; }
+.editor-find-panel .icon-btn { min-height: 34px; }
+
+.editor-settings-body {
+  padding: 8px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.editor-settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: #ccc;
+}
+.editor-settings-value {
+  font-family: ui-monospace, monospace;
+  color: #7db0f0;
+}
+.editor-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: #1e1e1e;
+  border-radius: 3px;
+  outline: none;
+  border: 1px solid #3c3c3c;
+  box-sizing: border-box;
+  padding: 0;
+}
+.editor-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #0e639c;
+  cursor: pointer;
+  border: 2px solid #1e1e1e;
+  box-sizing: border-box;
+}
+.editor-slider::-webkit-slider-thumb:hover { background: #1177bb; }
+.editor-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #0e639c;
+  cursor: pointer;
+  border: 2px solid #1e1e1e;
+  box-sizing: border-box;
+}
+.editor-slider::-moz-range-track {
+  height: 6px;
+  background: #1e1e1e;
+  border-radius: 3px;
+}
+
 #file-editor {
   flex: 1;
   min-height: 0;
@@ -294,7 +395,7 @@ body {
   border: none;
   outline: none;
   font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 14px;
+  font-size: var(--editor-font-size, 14px);
   line-height: 1.55;
   tab-size: 4;
   white-space: pre;

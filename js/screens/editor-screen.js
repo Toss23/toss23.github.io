@@ -141,5 +141,31 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       saveBtn.classList.remove("active");
       revertBtn.disabled = true;
     },
+    getContent() {
+      return textarea ? textarea.value : "";
+    },
+    setContent(text) {
+      if (!textarea) return;
+      textarea.value = text;
+      scheduleHighlight();
+      clearTimeout(checkTimer);
+      checkTimer = setTimeout(check, 200);
+      const evt = new Event("input", { bubbles: true });
+      textarea.dispatchEvent(evt);
+    },
+    selectRange(start, end) {
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(start, end);
+      const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 22;
+      const before = textarea.value.slice(0, start);
+      const line = (before.match(/\n/g) || []).length;
+      const target = Math.max(0, line * lineHeight - textarea.clientHeight / 2 + lineHeight);
+      textarea.scrollTop = target;
+      if (highlight) highlight.scrollTop = textarea.scrollTop;
+    },
+    focus() {
+      if (textarea) textarea.focus();
+    },
   };
 }

@@ -41,6 +41,7 @@ import { initAuthScreen } from "@screens/auth-screen.js";
 import { initReposScreen } from "@screens/repos-screen.js";
 import { initFilesScreen } from "@screens/files-screen.js";
 import { initEditorScreen } from "@screens/editor-screen.js";
+import { initEditorToolbar } from "@ui/editor-toolbar.js";
 import { initHistoryScreen } from "@screens/history-screen.js";
 import { initImageScreen } from "@screens/image-screen.js";
 import { initCommitScreen } from "@screens/commit-screen.js";
@@ -210,6 +211,8 @@ const editorScreen = initEditorScreen({
   onSave: saveFileToLocal,
   onRevert: revertFile,
 });
+
+initEditorToolbar({ editorScreen });
 const commitScreen = initCommitScreen({
   onSubmit: commit,
   onCancel: () => {},

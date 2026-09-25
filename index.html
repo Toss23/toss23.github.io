@@ -107,6 +107,22 @@
       <button id="save-file" class="icon-btn hidden" title="Сохранить в локальную копию" disabled>💾</button>
       <button id="revert-file" class="icon-btn hidden" title="Откатить изменения" disabled>↩️</button>
     </div>
+    <div class="editor-toolbar">
+      <button id="btn-editor-find" class="icon-btn" title="Найти">🔍 Найти</button>
+      <button id="btn-editor-replace" class="icon-btn" title="Заменить">✏️ Заменить</button>
+      <button id="btn-editor-settings" class="icon-btn" title="Настройки редактора">⚙️ Настройки</button>
+    </div>
+
+    <div id="editor-find-panel" class="editor-find-panel hidden">
+      <input id="editor-find-input" class="editor-find-input" placeholder="Найти..." autocomplete="off">
+      <input id="editor-replace-input" class="editor-replace-input hidden" placeholder="Заменить на..." autocomplete="off">
+      <button id="editor-find-prev" class="icon-btn" title="Предыдущее">▲</button>
+      <button id="editor-find-next" class="icon-btn" title="Следующее">▼</button>
+      <button id="editor-replace-one" class="icon-btn hidden" title="Заменить это">Заменить</button>
+      <button id="editor-replace-all" class="icon-btn hidden" title="Заменить все">Все</button>
+      <button id="editor-find-close" class="icon-btn" title="Закрыть">✕</button>
+    </div>
+
     <div id="file-editor" class="editor-wrapper">
       <pre id="file-highlight" class="editor-highlight" aria-hidden="true"><code></code></pre>
       <textarea id="file-content" disabled spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" wrap="off"></textarea>
@@ -254,6 +270,26 @@
       <div class="modal-actions">
         <button id="ai-map-preview-cancel" class="icon-btn">Закрыть</button>
         <button id="ai-map-preview-download" class="primary">💾 Скачать .md</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка настроек редактора -->
+  <div id="editor-settings-modal" class="modal hidden">
+    <div class="modal-content dialog-content">
+      <div class="modal-head">
+        <h3>Настройки редактора</h3>
+        <button id="editor-settings-close" class="icon-btn" title="Закрыть">✕</button>
+      </div>
+      <div class="editor-settings-body">
+        <div class="editor-settings-row">
+          <span>Размер шрифта</span>
+          <span class="editor-settings-value"><span id="editor-font-size-value">14</span> px</span>
+        </div>
+        <input id="editor-font-size" class="editor-slider" type="range" min="10" max="24" step="1" value="14">
+      </div>
+      <div class="modal-actions">
+        <button id="editor-settings-done" class="primary">Готово</button>
       </div>
     </div>
   </div>
