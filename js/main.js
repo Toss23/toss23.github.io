@@ -1,0 +1,2481 @@
+import {
+  getState, setState, subscribe,
+  setDirty, removeDirty, clearDirty,
+  setDeleted, removeDeleted, clearDeleted,
+  setSelectionMode, toggleSelection,
+  setRemoteChanges, clearRemoteChanges,
+} from "./store.js";
+import { loadToken, saveToken, clearToken, createClient, fetchUser } from "./auth.js";
+import {
+  listRepos, listBranches, listFiles, getFile,
+  compareCommits, listCommits, getCommit, getBlobRaw,
+  initEmptyRepo,
+} from "./github.js";
+import { commitFiles } from "./commit.js";
+import { gitBlobSha, gitBlobShaFromBase64 } from "./git-sha.js";
+import { detectEol, toLf, fromLf, base64ToBytes, bytesToBase64 } from "./encoding.js";
+import { readUploadedFile, saveUploadedEntry } from "./upload.js";
+import { initStatus, setStatus } from "./status.js";
+import { initHeader } from "./header.js";
+import { initNav } from "./nav.js";
+import { initAuthScreen } from "./auth-screen.js";
+import { initReposScreen } from "./repos-screen.js";
+import { initFilesScreen } from "./files-screen.js";
+import { initEditorScreen } from "./editor-screen.js";
+import { initCommitScreen } from "./commit-screen.js";
+import { initFullscreen } from "./fullscreen.js";
+import { initProgressBar } from "./progress-bar.js";
+import { initDialogs } from "./dialogs.js";
+import { initRepoActionsModal } from "./repo-actions-modal.js";
+import { initUpdateModal } from "./update-modal.js";
+import { initHistoryScreen } from "./history-screen.js";
+import { initHistoryModal } from "./history-modal.js";
+import { initImageScreen } from "./image-screen.js";
+import { initDropZone } from "./drop-zone.js";
+import { revertCommit } from "./revert.js";
+import { SCREENS, isImagePath } from "./config.js";
+import * as storage from "./storage.js";
+import { cloneRepo, checkRemoteHead } from "./clone.js";
+import { pullRepo } from "./pull.js";
+import { formatSize } from "./format.js";
+
+/* ---------- Утилиты ---------- */
+
+function isEmptyRepoError(e) {
+  if (!e) return false;
+  const msg = (e.message || "").toLowerCase();
+  return msg.includes("repository is empty") ||
+         msg.includes("git repository is empty") ||
+         (e.status === 409 && msg.includes("empty"));
+}
+
+/* ---------- Инициализация ---------- */
+
+initStatus();
+initFullscreen("fullscreen-btn");
+const progressBar = initProgressBar();
+const dialogs = initDialogs();
+
+const header = initHeader({ onLogout: logout });
+const nav = initNav({ onExitRepo: exitRepo, onBack: goBack, onCommit: openCommit });
+initAuthScreen({ onToken: login });
+
+const reposScreen = initReposScreen({ onSelect: handleRepoSelect });
+const filesScreen = initFilesScreen({
+  onOpenFolder: openFolder,
+  onOpenFile: openFile,
+  onBranchChange: selectBranch,
+  onCreateFile: createFile,
+  onCreateFolder: createFolder,
+  onEnterSelection: enterSelection,
+  onCancelSelection: cancelSelection,
+  onToggleSelect: (path) => {
+    toggleSelection(path);
+    renderFiles();
+  },
+  onConfirmDelete: confirmDeleteSelected,
+  onOpenHistory: openHistory,
+  onRename: renameSelected,
+  onDownload: downloadSelected,
+  onMove: moveSelected,
+  onMoveFile: moveEntry,
+  onLongPressSelect: (path) => {
+    const { selectionMode } = getState();
+    if (selectionMode) return;
+    setSelectionMode(true);
+    toggleSelection(path);
+    renderFiles();
+  },
+});
+
+/* ---------- Загрузка с устройства ---------- */
+
+const uploadInput = document.getElementById("upload-input");
+const btnUpload = document.getElementById("btn-upload");
+const uploadFolderInput = document.getElementById("upload-folder-input");
+
+const supportsFolderUpload = (() => {
+  const probe = document.createElement("input");
+  probe.type = "file";
+  const hasProp = "webkitdirectory" in probe || "directory" in probe;
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini/i.test(navigator.userAgent || "");
+  return hasProp && !isMobile;
+})();
+
+if (btnUpload) btnUpload.addEventListener("click", () => {
+  if (!supportsFolderUpload) {
+    uploadInput.value = "";
+    uploadInput.click();
+    return;
+  }
+
+  dialogs.choose({
+    title: "Что загрузить?",
+    text:
+      "Файлы — можно выбрать несколько.\n" +
+      "Папка — загрузится вся структура внутри.",
+    options: [
+      {
+        text: "📄 Файлы",
+        onClick: () => {
+          uploadInput.value = "";
+          uploadInput.click();
+        },
+      },
+      {
+        text: "📁 Папку",
+        kind: "primary",
+        onClick: () => {
+          uploadFolderInput.value = "";
+          uploadFolderInput.click();
+        },
+      },
+    ],
+  });
+});
+
+if (uploadInput) uploadInput.addEventListener("change", handleUploadSelection);
+if (uploadFolderInput) uploadFolderInput.addEventListener("change", handleUploadSelection);
+
+const dropZone = initDropZone({
+  isActive: () => {
+    const s = getState();
+    return !!s.mode && s.screen === SCREENS.FILES;
+  },
+  onFiles: (entries) => processUploadedEntries(entries),
+});
+
+const editorScreen = initEditorScreen({
+  onStateChange: handleEditorState,
+  onSave: saveFileToLocal,
+  onRevert: revertFile,
+});
+const commitScreen = initCommitScreen({
+  onSubmit: commit,
+  onCancel: () => {},
+  onRevertAll: revertAll,
+});
+const repoActionsModal = initRepoActionsModal({
+  onOpenRemote: openRepoRemote,
+  onOpenLocal: openRepoLocal,
+  onClone: cloneAndOpen,
+  onDeleteLocal: deleteLocalCopy,
+  dialogs,
+});
+const updateModal = initUpdateModal({
+  onUpdate: async (ctx) => {
+    dismissedRemoteSha = null;
+    await runPull(ctx);
+  },
+  onKeepLocal: (ctx) => {
+    if (ctx.auto) {
+      dismissedRemoteSha = ctx.remoteSha;
+    } else {
+      enterLocalMode(ctx.repo, ctx.meta);
+    }
+  },
+});
+
+const historyScreen = initHistoryScreen({
+  onOpenCommit: openHistoryCommit,
+  onBack: () => { setScreen(SCREENS.FILES); renderFiles(); },
+  onRefresh: () => openHistory(),
+});
+
+const historyModal = initHistoryModal({ onRevert: handleRevertCommit });
+
+const imageScreen = initImageScreen();
+
+/* ---------- Авто-проверка обновлений в local ---------- */
+
+let localWatchTimer = null;
+let dismissedRemoteSha = null;
+
+function startLocalWatch() {
+  stopLocalWatch();
+  localWatchTimer = setInterval(localWatchTick, 15000);
+}
+
+function stopLocalWatch() {
+  if (localWatchTimer) {
+    clearInterval(localWatchTimer);
+    localWatchTimer = null;
+  }
+  dismissedRemoteSha = null;
+}
+
+async function localWatchTick() {
+  const { mode, cloned, screen, octokit, repo, branch } = getState();
+  if (mode !== "local" || !cloned || !octokit || !repo) return;
+  if (screen !== SCREENS.FILES && screen !== SCREENS.EDITOR && screen !== SCREENS.HISTORY) return;
+
+  const modal = document.getElementById("update-modal");
+  if (modal && !modal.classList.contains("hidden")) return;
+
+  try {
+    const remoteSha = await checkRemoteHead(octokit, {
+      owner: repo.owner, name: repo.name, branch,
+    });
+    if (!remoteSha) return;
+    if (remoteSha === cloned.headSha) return;
+    if (remoteSha === dismissedRemoteSha) return;
+
+    const repoLike = {
+      owner: { login: repo.owner },
+      name: repo.name,
+      full_name: repo.fullName,
+      default_branch: repo.defaultBranch,
+    };
+
+    updateModal.open({
+      repo: repoLike,
+      meta: cloned,
+      remoteSha,
+      dirtyCount: getState().dirty.size,
+      auto: true,
+    });
+  } catch (e) {
+    console.warn("localWatch:", e.message);
+  }
+}
+
+/* ---------- Экраны ---------- */
+
+const SCREEN_IDS = {
+  [SCREENS.AUTH]: "screen-auth",
+  [SCREENS.REPOS]: "screen-repos",
+  [SCREENS.FILES]: "screen-files",
+  [SCREENS.EDITOR]: "screen-editor",
+  [SCREENS.HISTORY]: "screen-history",
+  [SCREENS.IMAGE]: "screen-image",
+};
+
+function setScreen(name) {
+  for (const [key, id] of Object.entries(SCREEN_IDS)) {
+    document.getElementById(id).classList.toggle("hidden", key !== name);
+  }
+  document.getElementById("app-header").classList.toggle("hidden", name === SCREENS.AUTH);
+  nav.setVisible(
+    name === SCREENS.FILES ||
+    name === SCREENS.EDITOR ||
+    name === SCREENS.HISTORY ||
+    name === SCREENS.IMAGE
+  );
+  setState({ screen: name });
+}
+
+/* ---------- Навигация ---------- */
+
+async function goBack() {
+  const { screen, currentPath } = getState();
+
+  if (screen === SCREENS.IMAGE) {
+    imageScreen.close();
+    setState({ openFile: null });
+    setScreen(SCREENS.FILES);
+    renderFiles();
+    return;
+  }
+
+  if (screen === SCREENS.HISTORY) {
+    setScreen(SCREENS.FILES);
+    renderFiles();
+    return;
+  }
+
+  if (screen === SCREENS.EDITOR) {
+    await maybeAutoSave();
+    editorScreen.close();
+    setState({ openFile: null });
+    setScreen(SCREENS.FILES);
+    renderFiles();
+    return;
+  }
+
+  if (screen === SCREENS.FILES) {
+    if (currentPath) {
+      const parts = currentPath.split("/").filter(Boolean);
+      parts.pop();
+      const parent = parts.length ? parts.join("/") + "/" : "";
+      setState({ currentPath: parent });
+      renderFiles();
+    } else {
+      exitRepo();
+    }
+  }
+}
+
+async function exitRepo() {
+  stopLocalWatch();
+  await maybeAutoSave();
+  if (!(await confirmDiscard())) return;
+  editorScreen.close();
+  setState({
+    repo: null, branch: null, branches: [], files: [],
+    currentPath: "", openFile: null,
+    mode: null, cloned: null, base: new Map(), baseHeadSha: null,
+  });
+  clearDirty();
+  clearDeleted();
+  clearRemoteChanges();
+  setSelectionMode(false);
+  setScreen(SCREENS.REPOS);
+}
+
+async function maybeAutoSave() {
+  const { mode, openFile, dirty } = getState();
+  if (mode !== "local" || !openFile) return;
+  if (!dirty.has(openFile.path)) return;
+  await saveFileToLocal(openFile.path, dirty.get(openFile.path));
+}
+
+/* ---------- Авторизация ---------- */
+
+async function login(token) {
+  if (!token) return;
+  setStatus("Проверка токена...");
+  try {
+    const octokit = createClient(token);
+    const user = await fetchUser(octokit);
+    saveToken(token);
+    setState({ octokit, user });
+    header.setUser(user.login);
+
+    const persistent = await storage.requestPersistent();
+    console.log("Persistent storage:", persistent);
+
+    setScreen(SCREENS.REPOS);
+    await loadAllRepos();
+  } catch (e) {
+    setStatus("Ошибка токена: " + e.message, true);
+    clearToken();
+    header.setLoggedOut();
+    setScreen(SCREENS.AUTH);
+  }
+}
+
+function logout() {
+  stopLocalWatch();
+  clearToken();
+  editorScreen.close();
+  Object.assign(getState(), {
+    octokit: null, user: null, repos: [], clonedMap: new Map(),
+    repo: null, branch: null, branches: [], files: [],
+    currentPath: "", openFile: null, mode: null, cloned: null,
+    base: new Map(), baseHeadSha: null,
+  });
+  clearDirty();
+  clearDeleted();
+  clearRemoteChanges();
+  setSelectionMode(false);
+  reposScreen.reset();
+  header.setLoggedOut();
+  setScreen(SCREENS.AUTH);
+}
+
+/* ---------- Репозитории ---------- */
+
+async function loadAllRepos() {
+  setStatus("Загрузка репозиториев...");
+  const [list, clones, est] = await Promise.all([
+    listRepos(getState().octokit),
+    storage.listClonedRepos(),
+    storage.estimateStorage(),
+  ]);
+
+  const clonedMap = new Map();
+  for (const c of clones) {
+    clonedMap.set(`${c.owner}/${c.name}`, c.totalBytes || 0);
+  }
+
+  setState({ repos: list, clonedMap });
+  reposScreen.setRepos(list, clonedMap);
+
+  if (est) {
+    setStatus(
+      `Репозиториев: ${list.length} · кэш: ${formatSize(est.usage)} / ${formatSize(est.quota)}`
+    );
+  } else {
+    setStatus(`Репозиториев: ${list.length}`);
+  }
+}
+
+async function handleRepoSelect(repo) {
+  const key = storage.makeRepoKey(repo.owner.login, repo.name, repo.default_branch);
+  const meta = await storage.loadRepoMeta(key);
+
+  if (meta) {
+    repoActionsModal.open(repo, true);
+    return;
+  }
+
+  const { octokit } = getState();
+
+  let isEmpty = false;
+  try {
+    await checkRemoteHead(octokit, {
+      owner: repo.owner.login, name: repo.name, branch: repo.default_branch,
+    });
+  } catch (e) {
+    if (isEmptyRepoError(e)) isEmpty = true;
+    else console.warn("Проверка репо:", e.message);
+  }
+
+  if (isEmpty) {
+    const ok = await dialogs.confirm({
+      title: "Пустой репозиторий",
+      text:
+        `${repo.full_name}\n\n` +
+        "В нём нет ни одного коммита. Инициализировать? " +
+        "Будет создан файл README.md и первый коммит в ветке " +
+        `${repo.default_branch}.`,
+      okText: "Инициализировать",
+      cancelText: "Выйти",
+    });
+    if (!ok) return;
+
+    progressBar.show("Инициализация репозитория...");
+    try {
+      const sha = await initEmptyRepo(
+        octokit,
+        repo.owner.login, repo.name, repo.default_branch
+      );
+      setStatus(`Инициализировано: ${sha.slice(0, 7)}`);
+    } catch (e) {
+      setStatus("Ошибка инициализации: " + e.message, true);
+      progressBar.hide();
+      return;
+    }
+    progressBar.hide();
+
+    repoActionsModal.open(repo, false);
+
+    try {
+      const [tree, est] = await Promise.all([
+        listFiles(octokit, repo.owner.login, repo.name, repo.default_branch),
+        storage.estimateStorage(),
+      ]);
+
+      const repoBytes = tree.reduce((s, f) => s + (f.size || 0), 0);
+      const available = est ? Math.max(0, est.quota - est.usage) : 0;
+
+      repoActionsModal.setSizes(repo.full_name, { repoBytes, available });
+    } catch (e) {
+      console.warn("Не удалось оценить размер:", e);
+      repoActionsModal.setSizes(repo.full_name, {});
+    }
+    return;
+  }
+
+  repoActionsModal.open(repo, false);
+
+  try {
+    const [tree, est] = await Promise.all([
+      listFiles(octokit, repo.owner.login, repo.name, repo.default_branch),
+      storage.estimateStorage(),
+    ]);
+
+    const repoBytes = tree.reduce((s, f) => s + (f.size || 0), 0);
+    const available = est ? Math.max(0, est.quota - est.usage) : 0;
+
+    repoActionsModal.setSizes(repo.full_name, { repoBytes, available });
+  } catch (e) {
+    console.warn("Не удалось оценить размер:", e);
+    repoActionsModal.setSizes(repo.full_name, {});
+  }
+}
+
+/* ---------- Режим 1: remote ---------- */
+
+async function openRepoRemote(repo) {
+  stopLocalWatch();
+  if (!(await confirmDiscard())) return;
+  const { octokit } = getState();
+
+  setState({
+    mode: "remote", cloned: null, base: new Map(), baseHeadSha: null,
+    repo: {
+      owner: repo.owner.login,
+      name: repo.name,
+      fullName: repo.full_name,
+      defaultBranch: repo.default_branch,
+    },
+    branch: null, branches: [], files: [], currentPath: "", openFile: null,
+  });
+  clearDirty();
+  clearDeleted();
+  clearRemoteChanges();
+  setSelectionMode(false);
+  editorScreen.close();
+
+  setStatus(`Загрузка веток ${repo.full_name}...`);
+
+  let branches = [];
+  try {
+    branches = await listBranches(octokit, repo.owner.login, repo.name);
+  } catch (e) {
+    if (isEmptyRepoError(e)) {
+      setStatus("Репозиторий пуст — нет ни одного коммита", true);
+      setState({
+        branches: [{ name: repo.default_branch }],
+        branch: repo.default_branch,
+        baseHeadSha: null,
+        files: [],
+      });
+      setScreen(SCREENS.FILES);
+      renderFiles();
+      return;
+    }
+    setStatus("Ошибка загрузки веток: " + e.message, true);
+    return;
+  }
+
+  let baseHeadSha = null;
+  try {
+    baseHeadSha = await checkRemoteHead(octokit, {
+      owner: repo.owner.login, name: repo.name, branch: repo.default_branch,
+    });
+  } catch (e) {
+    if (!isEmptyRepoError(e)) {
+      console.warn("checkRemoteHead:", e.message);
+    }
+  }
+
+  setState({ branches, branch: repo.default_branch, baseHeadSha });
+
+  try {
+    await loadTree();
+  } catch (e) {
+    if (isEmptyRepoError(e)) {
+      setState({ files: [] });
+      setStatus("Репозиторий пуст", false);
+    } else {
+      setStatus("Ошибка загрузки дерева: " + e.message, true);
+    }
+  }
+
+  setScreen(SCREENS.FILES);
+  renderFiles();
+}
+
+async function selectBranch(branch) {
+  if (branch === getState().branch) return;
+  const { mode, octokit, repo } = getState();
+
+  if (mode === "local") {
+    setStatus("В локальном режиме ветка фиксирована", true);
+    renderFiles();
+    return;
+  }
+  if (!(await confirmDiscard())) { renderFiles(); return; }
+
+  let baseHeadSha = null;
+  try {
+    baseHeadSha = await checkRemoteHead(octokit, {
+      owner: repo.owner, name: repo.name, branch,
+    });
+  } catch (e) {
+    console.warn("checkRemoteHead:", e.message);
+  }
+
+  setState({ branch, files: [], currentPath: "", openFile: null, baseHeadSha });
+  clearDirty();
+  clearDeleted();
+  clearRemoteChanges();
+  setSelectionMode(false);
+  editorScreen.close();
+  await loadTree();
+  renderFiles();
+}
+
+async function loadTree() {
+  const { octokit, repo, branch } = getState();
+  setStatus("Загрузка дерева...");
+  const tree = await listFiles(octokit, repo.owner, repo.name, branch);
+  setState({
+    files: tree.map((f) => ({ path: f.path, sha: f.sha, size: f.size })),
+  });
+  setStatus(`Файлов: ${tree.length}`);
+}
+
+/* ---------- Режим 2: local ---------- */
+
+async function openRepoLocal(repo) {
+  if (!(await confirmDiscard())) return;
+  const key = storage.makeRepoKey(repo.owner.login, repo.name, repo.default_branch);
+  const meta = await storage.loadRepoMeta(key);
+  if (!meta) { setStatus("Локальная копия не найдена", true); return; }
+
+  setStatus("Проверка обновлений...");
+  let remoteSha;
+  try {
+    remoteSha = await checkRemoteHead(getState().octokit, {
+      owner: repo.owner.login, name: repo.name, branch: meta.branch,
+    });
+  } catch (e) {
+    setStatus("Не удалось проверить head: " + e.message, true);
+    return;
+  }
+  setStatus("");
+
+  if (remoteSha !== meta.headSha) {
+    updateModal.open({ repo, meta, remoteSha, dirtyCount: getState().dirty.size });
+    return;
+  }
+  await enterLocalMode(repo, meta);
+}
+
+async function repairLegacyClone(meta, filesIndex) {
+  const key = meta.key;
+  let fixed = 0;
+
+  for (const m of filesIndex) {
+    if (m.baseSha !== undefined && m.isNew !== undefined) continue;
+
+    const entry = await storage.getFile(key, m.path);
+    if (!entry) continue;
+
+    let newSha;
+    if (entry.isBinary) {
+      newSha = await gitBlobShaFromBase64(entry.content);
+    } else {
+      newSha = await gitBlobSha(entry.content);
+    }
+
+    entry.sha = newSha;
+    entry.baseSha = newSha;
+    entry.isNew = false;
+    if (!entry.isBinary && !entry.baseContentLf) {
+      entry.baseContentLf = toLf(entry.content);
+    }
+    await storage.saveFile(key, entry);
+
+    m.sha = newSha;
+    m.baseSha = newSha;
+    m.isNew = false;
+    fixed++;
+  }
+
+  await storage.updateRepoMeta(key, { repaired: true });
+
+  if (fixed > 0) {
+    console.log(`[repairLegacyClone] восстановлено файлов: ${fixed}`);
+    return true;
+  }
+  return false;
+}
+
+async function enterLocalMode(repo, meta) {
+  let filesIndex = await storage.loadFilesIndex(meta.key);
+
+  if (!meta.repaired) {
+    const didFix = await repairLegacyClone(meta, filesIndex);
+    if (didFix) {
+      filesIndex = await storage.loadFilesIndex(meta.key);
+      meta = { ...meta, repaired: true };
+    }
+  }
+
+  try {
+    const remoteHead = await checkRemoteHead(getState().octokit, {
+      owner: repo.owner.login, name: repo.name, branch: meta.branch,
+    });
+    if (remoteHead && remoteHead !== meta.headSha) {
+      const diff = await compareCommits(
+        getState().octokit, repo.owner.login, repo.name, meta.headSha, remoteHead
+      );
+      const changes = new Map();
+      for (const f of diff.files || []) {
+        if (f.status === "removed" && f.filename) changes.set(f.filename, "removed");
+        else if (f.status === "added" && f.filename) changes.set(f.filename, "added");
+        else if (f.status === "modified" && f.filename) changes.set(f.filename, "modified");
+        else if (f.status === "renamed") {
+          if (f.previous_filename) changes.set(f.previous_filename, "renamed");
+          if (f.filename) changes.set(f.filename, "added");
+        }
+      }
+      setRemoteChanges(changes);
+    } else {
+      clearRemoteChanges();
+    }
+  } catch (e) {
+    console.warn("Не удалось сравнить с сервером:", e.message);
+    clearRemoteChanges();
+  }
+
+  setState({
+    mode: "local",
+    cloned: meta,
+    base: new Map(),
+    baseHeadSha: meta.headSha,
+    repo: {
+      owner: repo.owner.login,
+      name: repo.name,
+      fullName: repo.full_name,
+      defaultBranch: repo.default_branch,
+    },
+    branch: meta.branch,
+    branches: [{ name: meta.branch }],
+    files: filesIndex.map((f) => ({
+      path: f.path,
+      sha: f.sha,
+      baseSha: f.baseSha !== undefined ? f.baseSha : f.sha,
+      size: f.size || 0,
+      isNew: !!f.isNew,
+      isBinary: !!f.isBinary,
+      _movedFrom: f._movedFrom || null,
+    })),
+    currentPath: "",
+    openFile: null,
+  });
+  clearDirty();
+  clearDeleted();
+  for (const p of meta.pendingDeletes || []) setDeleted(p);
+  setSelectionMode(false);
+  editorScreen.close();
+  setScreen(SCREENS.FILES);
+  renderFiles();
+  setStatus(`📦 Локальная копия · ${meta.branch} · ${formatSize(meta.totalBytes || 0)}`);
+  startLocalWatch();
+}
+
+async function cloneAndOpen(repo) {
+  if (!(await confirmDiscard())) return;
+  const { octokit } = getState();
+  const owner = repo.owner.login;
+  const name = repo.name;
+  const branch = repo.default_branch;
+
+  const persistent = await storage.requestPersistent();
+  if (!persistent) console.warn("Постоянное хранилище не предоставлено");
+
+  progressBar.show("Клонирование: подготовка...");
+  setStatus("");
+  try {
+    const { headSha, files, totalBytes } = await cloneRepo(octokit, {
+      owner, name, branch,
+      onProgress: (done, total, bytes, totalBytes) => {
+        progressBar.update(done, total, bytes, totalBytes);
+      },
+    });
+
+    const key = storage.makeRepoKey(owner, name, branch);
+    const meta = {
+      key, owner, name, branch,
+      fullName: repo.full_name,
+      defaultBranch: branch,
+      headSha,
+      clonedAt: Date.now(),
+      fileCount: files.length,
+      totalBytes,
+      pendingDeletes: [],
+      repaired: true,
+    };
+
+    progressBar.show("Сохранение: 0%");
+    await storage.saveRepo(meta, files, {
+      onProgress: (done, total) => progressBar.update(done, total),
+    });
+
+    const clonedMap = new Map(getState().clonedMap);
+    clonedMap.set(repo.full_name, totalBytes);
+    setState({ clonedMap });
+    reposScreen.setRepos(getState().repos, clonedMap);
+
+    setStatus(`Склонировано: ${files.length} файлов · ${formatSize(totalBytes)}`);
+    await enterLocalMode(repo, meta);
+  } catch (e) {
+    setStatus("Ошибка клонирования: " + e.message, true);
+  } finally {
+    progressBar.hide();
+  }
+}
+
+async function deleteLocalCopy(repo) {
+  const key = storage.makeRepoKey(repo.owner.login, repo.name, repo.default_branch);
+
+  progressBar.showIndeterminate("Удаление локальной копии...");
+  try {
+    await new Promise((r) => setTimeout(r, 120));
+    await storage.deleteRepo(key);
+
+    const clonedMap = new Map(getState().clonedMap);
+    clonedMap.delete(repo.full_name);
+    setState({ clonedMap });
+    reposScreen.setRepos(getState().repos, clonedMap);
+
+    setStatus("Локальная копия удалена");
+  } catch (e) {
+    setStatus("Ошибка удаления: " + e.message, true);
+  } finally {
+    progressBar.hide();
+  }
+}
+
+/* ---------- Файлы ---------- */
+
+function renderFiles() {
+  const state = getState();
+  const changed = new Set(state.dirty.keys());
+
+  for (const f of state.files) {
+    if (f.isNew) { changed.add(f.path); continue; }
+    if (f.baseSha !== undefined && f.sha !== f.baseSha) changed.add(f.path);
+  }
+
+  filesScreen.render({
+    files: state.files,
+    currentPath: state.currentPath,
+    dirtyPaths: changed,
+    deletedSet: state.deleted,
+    branch: state.branch,
+    branches: state.branches,
+    mode: state.mode,
+    selectionMode: state.selectionMode,
+    selection: state.selection,
+    remoteChanges: state.remoteChanges,
+  });
+}
+
+function openFolder(name) {
+  const { currentPath } = getState();
+
+  if (name === "..") {
+    const base = (currentPath || "").replace(/\/+$/, "");
+    if (!base) return;
+    const parts = base.split("/").filter(Boolean);
+    parts.pop();
+    const parent = parts.length ? parts.join("/") + "/" : "";
+    setState({ currentPath: parent });
+    renderFiles();
+    return;
+  }
+
+  setState({ currentPath: currentPath + name + "/" });
+  renderFiles();
+}
+
+/* ---------- Загрузка с устройства ---------- */
+
+async function handleUploadSelection(e) {
+  const selected = [...(e.target.files || [])];
+  if (!selected.length) return;
+
+  const entries = selected.map((file) => {
+    const rel = (file.webkitRelativePath || "").trim();
+    return { file, path: rel || file.name };
+  });
+
+  e.target.value = "";
+
+  await processUploadedEntries(entries);
+}
+
+async function processUploadedEntries(entries) {
+  if (!entries.length) return;
+
+  const { mode, cloned, currentPath } = getState();
+  if (!mode) return;
+
+  const base = (currentPath || "").replace(/\/+$/, "");
+
+  progressBar.show(`Загрузка: 0 / ${entries.length}`);
+
+  const added = [];
+  let done = 0;
+  let skipped = 0;
+  let replaceAll = false;
+  let skipAll = false;
+  let cancelled = false;
+
+  try {
+    for (const entry of entries) {
+      if (cancelled) break;
+
+      const rel = (entry.path || entry.file?.name || "").trim();
+      const clean = rel.split("/").filter(Boolean).join("/");
+      if (!clean) { done++; continue; }
+      const path = base ? `${base}/${clean}` : clean;
+
+      const currentFiles = getState().files;
+      const existsInFiles = currentFiles.some((f) => f.path === path);
+      const existsInAdded = added.some((f) => f.path === path);
+      const isDeleted = getState().deleted.has(path);
+      const conflict = (existsInFiles || existsInAdded) && !isDeleted;
+
+      if (conflict) {
+        if (skipAll) {
+          skipped++;
+          done++;
+          progressBar.update(done, entries.length);
+          continue;
+        }
+        if (!replaceAll) {
+          const decision = await askReplace(path);
+          if (decision === "cancel") { cancelled = true; break; }
+          if (decision === "replace-all") replaceAll = true;
+          else if (decision === "skip-all") skipAll = true;
+          else if (decision === "skip") {
+            skipped++;
+            done++;
+            progressBar.update(done, entries.length);
+            continue;
+          }
+        }
+      }
+
+      if (isDeleted) {
+        removeDeleted(path);
+        if (mode === "local" && cloned) {
+          const newPending = (cloned.pendingDeletes || []).filter((p) => p !== path);
+          cloned.pendingDeletes = newPending;
+          await storage.updateRepoMeta(cloned.key, { pendingDeletes: newPending });
+        }
+      }
+
+      if (existsInFiles) {
+        setState({ files: getState().files.filter((f) => f.path !== path) });
+      }
+      if (existsInAdded) {
+        const i = added.findIndex((f) => f.path === path);
+        if (i >= 0) added.splice(i, 1);
+      }
+
+      const data = await readUploadedFile(entry.file);
+      await saveUploadedEntry({ mode, cloned, path, data });
+
+      added.push({
+        path,
+        sha: null,
+        baseSha: null,
+        size: data.size,
+        isNew: true,
+        isBinary: data.isBinary,
+        eol: "\n",
+        content: data.isBinary ? data.content : null,
+      });
+
+      done++;
+      progressBar.update(done, entries.length);
+    }
+
+    if (added.length) {
+      setState({ files: [...getState().files, ...added] });
+      renderFiles();
+    }
+
+    const parts = [`Загружено: ${added.length}`];
+    if (skipped) parts.push(`пропущено: ${skipped}`);
+    if (cancelled) parts.push("прервано");
+    setStatus(parts.join(" · "));
+  } catch (err) {
+    setStatus("Ошибка загрузки: " + err.message, true);
+  } finally {
+    progressBar.hide();
+  }
+}
+
+function askReplace(path) {
+  return new Promise((resolve) => {
+    dialogs.choose({
+      title: "Файл уже существует",
+      text: path,
+      options: [
+        { text: "Заменить", kind: "primary", onClick: () => resolve("replace") },
+        { text: "Заменить все", onClick: () => resolve("replace-all") },
+        { text: "Пропустить", onClick: () => resolve("skip") },
+        { text: "Пропустить все", onClick: () => resolve("skip-all") },
+      ],
+      onDismiss: () => resolve("cancel"),
+    });
+  });
+}
+
+/* ---------- Перемещение drag-and-drop ---------- */
+
+async function moveEntry(srcPath, destFolderPath) {
+  const { files, deleted } = getState();
+
+  const cleanDest = (destFolderPath || "").replace(/\/+$/, "");
+
+  const isFolder = files.some((f) => f.path.startsWith(srcPath + "/"));
+  const entry = files.find((f) => f.path === srcPath);
+  if (!entry && !isFolder) return;
+
+  const base = srcPath.split("/").pop();
+  const newPath = cleanDest ? `${cleanDest}/${base}` : base;
+
+  if (newPath === srcPath) return;
+
+  if (isFolder && (newPath === srcPath || newPath.startsWith(srcPath + "/"))) {
+    await dialogs.alert({
+      title: "Нельзя переместить",
+      text: "Папку нельзя поместить внутрь самой себя",
+    });
+    return;
+  }
+
+  if (isFolder) {
+    const inside = files.filter((f) => f.path.startsWith(srcPath + "/"));
+    for (const f of inside) {
+      const candidate = newPath + f.path.slice(srcPath.length);
+      if (files.some((x) => x.path === candidate) && !deleted.has(candidate)) {
+        await dialogs.alert({
+          title: "Конфликт имён",
+          text: `Уже существует: ${candidate}`,
+        });
+        return;
+      }
+    }
+  } else {
+    if (files.some((f) => f.path === newPath) && !deleted.has(newPath)) {
+      await dialogs.alert({ title: "Уже существует", text: newPath });
+      return;
+    }
+  }
+
+  try {
+    if (isFolder) {
+      await renameFolder(srcPath, newPath);
+    } else {
+      await renameFile(srcPath, newPath);
+    }
+    renderFiles();
+    setStatus(`Перемещено: ${srcPath} → ${newPath}`);
+  } catch (e) {
+    setStatus("Ошибка перемещения: " + e.message, true);
+    console.error("moveEntry:", e);
+  }
+}
+
+/* ---------- Перемещение через диалог ---------- */
+
+let moveModalInstance = null;
+
+function initMoveModal() {
+  const modal = document.getElementById("move-modal");
+  const list = document.getElementById("move-list");
+  const titleEl = document.getElementById("move-modal-title");
+  const closeBtn = document.getElementById("move-modal-close");
+  if (!modal || !list) return { open: async () => null };
+
+  let resolver = null;
+
+  function close(path) {
+    modal.classList.add("hidden");
+    const r = resolver;
+    resolver = null;
+    if (r) r(path);
+  }
+
+  if (closeBtn) closeBtn.addEventListener("click", () => close(null));
+
+  return {
+    open({ title, options }) {
+      return new Promise((resolve) => {
+        resolver = resolve;
+        if (titleEl) titleEl.textContent = title || "Переместить";
+        list.innerHTML = "";
+
+        for (const o of options) {
+          const li = document.createElement("li");
+          if (o.current) li.classList.add("current");
+
+          const icon = document.createElement("span");
+          icon.className = "icon";
+          icon.textContent = o.icon || "📁";
+          li.appendChild(icon);
+
+          const name = document.createElement("span");
+          name.className = "name";
+          name.textContent = o.label;
+          li.appendChild(name);
+
+          if (o.current) {
+            const check = document.createElement("span");
+            check.className = "icon";
+            check.textContent = "✓";
+            li.appendChild(check);
+          } else {
+            li.addEventListener("click", () => close(o.value));
+          }
+
+          list.appendChild(li);
+        }
+        modal.classList.remove("hidden");
+      });
+    },
+  };
+}
+
+async function moveSelected() {
+  const { selection, files, currentPath } = getState();
+  console.log("[moveSelected] selection size:", selection?.size);
+  if (!selection || selection.size !== 1) return;
+
+  const sel = [...selection][0];
+  const isFolder = sel.endsWith("/");
+  const srcPath = isFolder ? sel.slice(0, -1) : sel;
+  const srcName = srcPath.split("/").pop();
+
+  const currentFolder = (currentPath || "").replace(/\/+$/, "");
+
+  const folderSet = new Set();
+  for (const f of files) {
+    const parts = f.path.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      folderSet.add(parts.slice(0, i).join("/"));
+    }
+  }
+
+  const options = [{
+    value: "",
+    label: "Корень репозитория",
+    icon: "🏠",
+    current: currentFolder === "",
+  }];
+
+  const sorted = [...folderSet].sort((a, b) => a.localeCompare(b));
+  for (const folder of sorted) {
+    if (isFolder && (folder === srcPath || folder.startsWith(srcPath + "/"))) continue;
+    options.push({
+      value: folder,
+      label: folder,
+      icon: "📁",
+      current: folder === currentFolder,
+    });
+  }
+
+  if (!moveModalInstance) moveModalInstance = initMoveModal();
+
+  const dest = await moveModalInstance.open({
+    title: `Переместить: ${srcName}`,
+    options,
+  });
+
+  if (dest === null || dest === undefined) return;
+  if (dest === currentFolder) return;
+
+  await moveEntry(srcPath, dest);
+}
+
+/* ---------- Скачивание ---------- */
+
+async function downloadSelected() {
+  const { selection, files, mode, cloned, dirty } = getState();
+  if (!selection || selection.size === 0) return;
+
+  const paths = [...selection].filter((p) => !p.endsWith("/"));
+  if (!paths.length) {
+    await dialogs.alert({
+      title: "Нечего скачивать",
+      text: "Выбраны только папки. Скачивание папок не поддерживается.",
+    });
+    return;
+  }
+
+  progressBar.show(`Скачивание: 0 / ${paths.length}`);
+  let done = 0;
+  let failed = 0;
+
+  try {
+    for (const path of paths) {
+      done++;
+      progressBar.update(done, paths.length);
+      try {
+        const blob = await buildFileBlob(path, files, mode, cloned, dirty);
+        if (!blob) { failed++; continue; }
+        triggerDownload(blob, path.split("/").pop());
+        await new Promise((r) => setTimeout(r, 150));
+      } catch (e) {
+        console.warn("download:", path, e.message);
+        failed++;
+      }
+    }
+
+    const parts = [`Скачано: ${paths.length - failed}`];
+    if (failed) parts.push(`ошибок: ${failed}`);
+    setStatus(parts.join(" · "));
+  } finally {
+    progressBar.hide();
+  }
+}
+
+async function buildFileBlob(path, files, mode, cloned, dirty) {
+  const file = files.find((f) => f.path === path);
+  if (!file) return null;
+
+  if (mode === "local" && cloned) {
+    const entry = await storage.getFile(cloned.key, path);
+    if (!entry) return null;
+    if (entry.isBinary) {
+      return new Blob([base64ToBytes(entry.content)]);
+    }
+    return new Blob([entry.content], { type: "text/plain" });
+  }
+
+  if (file.isNew) {
+    if (file.isBinary && file.content) {
+      return new Blob([base64ToBytes(file.content)]);
+    }
+    if (dirty.has(path)) {
+      return new Blob([dirty.get(path)], { type: "text/plain" });
+    }
+    return new Blob([""]);
+  }
+
+  if (!file.sha) return null;
+  const { octokit, repo } = getState();
+  return getBlobRaw(octokit, repo.owner, repo.name, file.sha);
+}
+
+function triggerDownload(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 300);
+}
+
+/* ---------- Просмотр бинарных файлов и изображений ---------- */
+
+async function openBinaryFile(file) {
+  const { octokit, repo } = getState();
+  if (!octokit || !repo) return;
+
+  if (isImagePath(file.path)) {
+    return openImage(file);
+  }
+
+  await dialogs.alert({
+    title: "Бинарный файл",
+    text: `${file.path}\n${formatSize(file.size || 0)}\n\nПросмотр недоступен.`,
+  });
+}
+
+async function openImage(file) {
+  const { octokit, repo, cloned, mode } = getState();
+  if (!octokit || !repo) return;
+
+  setStatus(`Загрузка ${file.path}...`);
+  try {
+    let blob = null;
+
+    if (mode === "local" && cloned && file.isNew) {
+      const entry = await storage.getFile(cloned.key, file.path);
+      if (entry && entry.isBinary) {
+        const bytes = base64ToBytes(entry.content);
+        blob = new Blob([bytes]);
+      }
+    }
+
+    if (!blob) {
+      let sha = file.sha;
+      if (!sha && mode === "local" && cloned) {
+        const entry = await storage.getFile(cloned.key, file.path);
+        sha = entry?.sha;
+      }
+      if (!sha) {
+        setStatus("Нет данных для просмотра", true);
+        return;
+      }
+      blob = await getBlobRaw(octokit, repo.owner, repo.name, sha);
+    }
+
+    imageScreen.open(file.path, blob);
+    setState({ openFile: { path: file.path } });
+    setScreen(SCREENS.IMAGE);
+    setStatus("");
+  } catch (e) {
+    setStatus("Не удалось открыть: " + e.message, true);
+  }
+}
+
+/* ---------- Revert коммита ---------- */
+
+async function handleRevertCommit(commit) {
+  const { octokit, repo, branch, mode } = getState();
+  if (!octokit || !repo) return;
+
+  if (mode === "local") {
+    await dialogs.alert({
+      title: "Только в remote",
+      text: "Отмена коммита доступна в режиме «Открыть временно». В локальной копии сделайте pull.",
+    });
+    return;
+  }
+
+  const ok = await dialogs.confirm({
+    title: "Отменить коммит?",
+    text:
+      `Будет создан новый коммит, возвращающий изменения ` +
+      `${commit.sha.slice(0, 7)} «${(commit.commit.message || "").split("\n")[0].slice(0, 40)}».\n\n` +
+      "История не переписывается.",
+    okText: "Отменить",
+    cancelText: "Отмена",
+    danger: true,
+  });
+  if (!ok) return;
+
+  progressBar.show("Отмена коммита...");
+  setStatus("");
+  try {
+    const newSha = await revertCommit(octokit, {
+      owner: repo.owner,
+      repo: repo.name,
+      branch,
+      commitSha: commit.sha,
+      commitMessage: commit.commit.message || "",
+    });
+
+    setState({ baseHeadSha: newSha });
+    setStatus(`Revert: ${newSha.slice(0, 7)}`);
+
+    await loadTree();
+    renderFiles();
+  } catch (e) {
+    setStatus("Ошибка revert: " + e.message, true);
+  } finally {
+    progressBar.hide();
+  }
+}
+
+/* ---------- Переименование ---------- */
+
+async function renameSelected() {
+  const { selection } = getState();
+  if (!selection || selection.size !== 1) return;
+
+  const sel = [...selection][0];
+  const isFolder = sel.endsWith("/");
+  const oldPath = isFolder ? sel.slice(0, -1) : sel;
+  const baseName = oldPath.split("/").pop() || oldPath;
+
+  const newName = await dialogs.prompt({
+    title: isFolder ? "Переименовать папку" : "Переименовать файл",
+    text: `Текущее: ${oldPath}`,
+    placeholder: "Новое имя",
+    initial: baseName,
+    okText: "Переименовать",
+  });
+  if (!newName) return;
+
+  const clean = normalizeName(newName);
+  if (!clean || clean === baseName) return;
+
+  const parentPath = oldPath.includes("/")
+    ? oldPath.slice(0, oldPath.lastIndexOf("/"))
+    : "";
+  const newPath = parentPath ? `${parentPath}/${clean}` : clean;
+
+  if (isFolder) {
+    await renameFolder(oldPath, newPath);
+  } else {
+    await renameFile(oldPath, newPath);
+  }
+
+  setSelectionMode(false);
+  renderFiles();
+  setStatus(`Переименовано: ${oldPath} → ${newPath}`);
+}
+
+async function renameFile(oldPath, newPath) {
+  const { mode, cloned, files, octokit, repo, branch, dirty } = getState();
+
+  const fileEntry = files.find((f) => f.path === oldPath);
+  if (!fileEntry) return;
+
+  if (files.some((f) => f.path === newPath) && !getState().deleted.has(newPath)) {
+    await dialogs.alert({ title: "Файл уже существует", text: newPath });
+    return;
+  }
+
+  let content = null;
+  let contentLf = null;
+  let eol = fileEntry.eol || null;
+  let isBinary = !!fileEntry.isBinary;
+
+  if (mode === "local" && cloned) {
+    const entry = await storage.getFile(cloned.key, oldPath);
+    if (entry) {
+      content = entry.content;
+      isBinary = !!entry.isBinary;
+      if (!isBinary) {
+        eol = detectEol(content) || "\n";
+        contentLf = toLf(content);
+      }
+    }
+  }
+
+  if (content === null && !isBinary) {
+    const d = dirty.get(oldPath);
+    if (d !== undefined && d !== null) {
+      contentLf = d;
+      eol = eol || "\n";
+      content = fromLf(d, eol);
+    }
+  }
+
+  if (content === null && fileEntry.isNew && fileEntry.content) {
+    content = fileEntry.content;
+    isBinary = true;
+  }
+
+  if (content === null) {
+    const ext = (oldPath.split(".").pop() || "").toLowerCase();
+    const looksBinary = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "pdf", "zip", "gz", "woff", "woff2", "ttf", "otf", "eot", "mp3", "mp4", "webm"].includes(ext);
+
+    if (looksBinary) {
+      try {
+        const blob = await getBlobRaw(octokit, repo.owner, repo.name, fileEntry.sha);
+        const buf = await blob.arrayBuffer();
+        content = bytesToBase64(new Uint8Array(buf));
+        isBinary = true;
+      } catch (e) {
+        console.warn("rename binary read:", e.message);
+        return;
+      }
+    } else {
+      try {
+        const raw = await getFile(octokit, repo.owner, repo.name, oldPath, branch);
+        eol = detectEol(raw) || "\n";
+        contentLf = toLf(raw);
+        content = fromLf(contentLf, eol);
+        isBinary = false;
+      } catch (e) {
+        console.warn("rename read:", e.message);
+        return;
+      }
+    }
+  }
+
+  if (content === null) {
+    setStatus("Не удалось прочитать содержимое файла", true);
+    return;
+  }
+
+  if (!isBinary) {
+    if (!eol) eol = detectEol(content) || "\n";
+    if (contentLf === null) contentLf = toLf(content);
+  }
+
+  const size = isBinary
+    ? base64ToBytes(content).length
+    : new TextEncoder().encode(content).length;
+
+  const originalBaseSha =
+    fileEntry.baseSha !== undefined ? fileEntry.baseSha
+    : fileEntry.isNew ? null
+    : fileEntry.sha;
+
+  const meta = {
+    path: newPath,
+    sha: null,
+    baseSha: null,
+    size,
+    isNew: true,
+    eol,
+    isBinary,
+    content: isBinary ? content : null,
+  };
+
+  const wasDeleted = getState().deleted.has(newPath);
+  const canRestore =
+    wasDeleted &&
+    fileEntry._movedFrom &&
+    fileEntry._movedFrom.path === newPath;
+
+  let restoredToOriginal = false;
+
+  if (canRestore) {
+    const currentSha = isBinary
+      ? await gitBlobShaFromBase64(content)
+      : await gitBlobSha(fromLf(contentLf, eol));
+
+    const restoredBaseSha =
+      fileEntry._movedFrom.baseSha !== undefined
+        ? fileEntry._movedFrom.baseSha
+        : fileEntry._movedFrom.sha;
+
+    meta.sha = currentSha;
+    meta.baseSha = restoredBaseSha;
+    meta.isNew = false;
+    removeDeleted(newPath);
+
+    if (currentSha === restoredBaseSha) {
+      restoredToOriginal = true;
+    }
+  } else {
+    if (wasDeleted) removeDeleted(newPath);
+    if (fileEntry._movedFrom) {
+      meta._movedFrom = fileEntry._movedFrom;
+    } else if (!fileEntry.isNew) {
+      meta._movedFrom = {
+        path: oldPath,
+        sha: fileEntry.sha,
+        baseSha: originalBaseSha,
+      };
+      setDeleted(oldPath);
+    }
+  }
+
+  if (mode === "local" && cloned) {
+    const localEntry = {
+      path: newPath,
+      content,
+      sha: meta.sha,
+      baseSha: meta.baseSha,
+      baseContentLf: meta.isNew ? "" : contentLf,
+      size,
+      isNew: meta.isNew,
+      isBinary,
+      _movedFrom: meta._movedFrom || null,
+    };
+    await storage.saveFile(cloned.key, localEntry);
+    if (fileEntry.isNew) {
+      await storage.deleteFiles(cloned.key, [oldPath]);
+    }
+  }
+
+  const remaining = files.filter((f) => f.path !== oldPath);
+  remaining.push(meta);
+
+  removeDirty(oldPath);
+  removeDirty(newPath);
+
+  if (!isBinary && !restoredToOriginal) {
+    setDirty(newPath, contentLf);
+  }
+
+  setState({ files: remaining });
+
+  if (mode === "local" && cloned) {
+    const pending = [...getState().deleted];
+    cloned.pendingDeletes = pending;
+    await storage.updateRepoMeta(cloned.key, { pendingDeletes: pending });
+  }
+}
+
+async function renameFolder(oldPrefix, newPrefix) {
+  const { files } = getState();
+  const inside = files.filter((f) => f.path.startsWith(oldPrefix + "/"));
+
+  if (!inside.length) {
+    await dialogs.alert({ title: "Папка пустая", text: oldPrefix });
+    return;
+  }
+
+  const existing = new Set(files.map((f) => f.path));
+  for (const f of inside) {
+    const candidate = newPrefix + f.path.slice(oldPrefix.length);
+    if (existing.has(candidate) && !getState().deleted.has(candidate)) {
+      await dialogs.alert({
+        title: "Конфликт имён",
+        text: `Уже существует: ${candidate}`,
+      });
+      return;
+    }
+  }
+
+  for (const f of inside) {
+    const newPath = newPrefix + f.path.slice(oldPrefix.length);
+    await renameFile(f.path, newPath);
+  }
+}
+
+async function openFile(file) {
+  if (file.isBinary) {
+    return openBinaryFile(file);
+  }
+  if (isImagePath(file.path)) {
+    return openImage(file);
+  }
+
+  const { octokit, repo, branch, dirty, mode, cloned } = getState();
+
+  let contentLf, baseSha, eol;
+
+  if (mode === "local" && cloned) {
+    const entry = await storage.getFile(cloned.key, file.path);
+    if (!entry) { setStatus("Файл не найден в копии", true); return; }
+
+    if (entry.isBinary) {
+      return openBinaryFile(file);
+    }
+    if (entry.content === undefined || entry.content === null) {
+      setStatus("Файл пуст или повреждён", true);
+      return;
+    }
+
+    eol = detectEol(entry.content);
+    baseSha = entry.baseSha;
+    contentLf = dirty.has(file.path) ? dirty.get(file.path) : toLf(entry.content);
+  } else {
+    if (dirty.has(file.path)) {
+      contentLf = dirty.get(file.path);
+      baseSha = file.sha;
+      eol = file.eol || "\n";
+    } else {
+      setStatus(`Открытие ${file.path}...`);
+      try {
+        const raw = await getFile(octokit, repo.owner, repo.name, file.path, branch);
+        eol = detectEol(raw);
+        contentLf = toLf(raw);
+        baseSha = file.sha;
+      } catch (e) {
+        setStatus("Не удалось открыть файл: " + e.message, true);
+        return;
+      }
+      setStatus("");
+    }
+    file.eol = eol;
+  }
+
+  setState({ openFile: { path: file.path } });
+  editorScreen.open({ path: file.path, baseSha, eol, content: contentLf });
+  editorScreen.setLocalMode(mode === "local");
+  setScreen(SCREENS.EDITOR);
+}
+
+function handleEditorState(path, { unsaved, current }) {
+  if (unsaved) setDirty(path, current);
+  else removeDirty(path);
+  if (getState().screen === SCREENS.FILES) renderFiles();
+}
+
+/* ---------- Сохранение в локальную копию ---------- */
+
+async function saveFileToLocal(path, contentLf) {
+  const { cloned, files, mode } = getState();
+  if (mode !== "local" || !cloned) return;
+
+  const fileEntry = files.find((f) => f.path === path);
+  if (!fileEntry) return;
+
+  const entry = await storage.getFile(cloned.key, path);
+  if (!entry) return;
+
+  const eol = detectEol(entry.content);
+  const contentOrig = fromLf(contentLf, eol);
+  const newSha = await gitBlobSha(contentOrig);
+
+  entry.content = contentOrig;
+  entry.sha = newSha;
+  entry.size = new TextEncoder().encode(contentOrig).length;
+  await storage.saveFile(cloned.key, entry);
+
+  fileEntry.sha = newSha;
+  fileEntry.size = entry.size;
+
+  removeDirty(path);
+  editorScreen.markSaved(path);
+  renderFiles();
+  setStatus("Сохранено в локальную копию");
+}
+
+async function flushDirtyToLocal() {
+  const { cloned, dirty, files, mode } = getState();
+  if (mode !== "local" || !cloned || dirty.size === 0) return;
+
+  for (const [path, contentLf] of [...dirty.entries()]) {
+    const fileEntry = files.find((f) => f.path === path);
+    if (!fileEntry) continue;
+
+    const entry = await storage.getFile(cloned.key, path);
+    if (!entry) continue;
+
+    const eol = detectEol(entry.content);
+    const contentOrig = fromLf(contentLf, eol);
+    const newSha = await gitBlobSha(contentOrig);
+
+    entry.content = contentOrig;
+    entry.sha = newSha;
+    entry.size = new TextEncoder().encode(contentOrig).length;
+    await storage.saveFile(cloned.key, entry);
+
+    fileEntry.sha = newSha;
+    fileEntry.size = entry.size;
+  }
+  clearDirty();
+  editorScreen.markSaved();
+}
+
+/* ---------- Создание файлов и папок ---------- */
+
+function normalizeName(name) {
+  return name.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
+}
+
+function fullPathOf(name) {
+  const { currentPath } = getState();
+  const base = (currentPath || "").replace(/\/+$/, "");
+  const clean = normalizeName(name);
+  return base ? base + "/" + clean : clean;
+}
+
+async function createFile() {
+  const { mode, cloned, deleted, files } = getState();
+  if (!mode) return;
+
+  const name = await dialogs.prompt({
+    title: "Создать файл",
+    placeholder: "например: Program.cs",
+    okText: "Создать",
+  });
+  if (!name) return;
+
+  const path = fullPathOf(name);
+
+  if (files.some((f) => f.path === path) && !deleted.has(path)) {
+    await dialogs.alert({ title: "Файл уже существует", text: path });
+    return;
+  }
+
+  if (deleted.has(path)) {
+    removeDeleted(path);
+    if (mode === "local" && cloned) {
+      const newPending = (cloned.pendingDeletes || []).filter((p) => p !== path);
+      cloned.pendingDeletes = newPending;
+      await storage.updateRepoMeta(cloned.key, { pendingDeletes: newPending });
+    }
+    renderFiles();
+    setStatus(`Удаление отменено: ${path}`);
+    return;
+  }
+
+  const entry = {
+    path, content: "", sha: null, baseSha: null,
+    baseContentLf: "", size: 0, isNew: true,
+  };
+
+  if (mode === "local" && cloned) await storage.saveFile(cloned.key, entry);
+
+  setState({
+    files: [...files, {
+      path, sha: null, baseSha: null, size: 0, isNew: true, eol: "\n",
+    }],
+  });
+  renderFiles();
+  setStatus(`Создан файл: ${path}`);
+}
+
+async function createFolder() {
+  const { mode, cloned, deleted, files } = getState();
+  if (!mode) return;
+
+  const name = await dialogs.prompt({
+    title: "Создать папку",
+    placeholder: "например: src/utils",
+    okText: "Создать",
+  });
+  if (!name) return;
+
+  const folderPath = fullPathOf(name);
+  const keepPath = folderPath + "/.gitkeep";
+
+  if (files.some((f) => f.path === keepPath) && !deleted.has(keepPath)) {
+    await dialogs.alert({ title: "Папка уже существует", text: folderPath });
+    return;
+  }
+
+  if (deleted.has(keepPath)) {
+    removeDeleted(keepPath);
+    if (mode === "local" && cloned) {
+      const newPending = (cloned.pendingDeletes || []).filter((p) => p !== keepPath);
+      cloned.pendingDeletes = newPending;
+      await storage.updateRepoMeta(cloned.key, { pendingDeletes: newPending });
+    }
+    renderFiles();
+    setStatus(`Удаление отменено: ${folderPath}`);
+    return;
+  }
+
+  const entry = {
+    path: keepPath, content: "", sha: null, baseSha: null,
+    baseContentLf: "", size: 0, isNew: true,
+  };
+
+  if (mode === "local" && cloned) await storage.saveFile(cloned.key, entry);
+
+  setState({
+    files: [...files, {
+      path: keepPath, sha: null, baseSha: null, size: 0, isNew: true, eol: "\n",
+    }],
+  });
+  renderFiles();
+  setStatus(`Создана папка: ${folderPath}`);
+}
+
+/* ---------- Режим удаления ---------- */
+
+function enterSelection() {
+  setSelectionMode(true);
+  renderFiles();
+}
+
+function cancelSelection() {
+  setSelectionMode(false);
+  renderFiles();
+}
+
+async function confirmDeleteSelected() {
+  const { selection, files, mode, cloned, deleted } = getState();
+  if (!selection || selection.size === 0) return;
+
+  const pathsToDelete = new Set();
+  for (const sel of selection) {
+    if (sel.endsWith("/")) {
+      for (const f of files) {
+        if (f.path.startsWith(sel)) pathsToDelete.add(f.path);
+      }
+    } else {
+      pathsToDelete.add(sel);
+    }
+  }
+
+  const remainingAfter = files.filter(
+    (f) =>
+      !pathsToDelete.has(f.path) &&
+      !deleted.has(f.path) &&
+      !f.isNew
+  ).length;
+
+  if (remainingAfter === 0) {
+    await dialogs.alert({
+      title: "Нельзя удалить все файлы",
+      text:
+        "GitHub не позволяет создать коммит без единого файла в дереве.\n\n" +
+        "Оставьте хотя бы один файл — например, README.md. " +
+        "Остальные можно удалить.",
+    });
+    return;
+  }
+
+  const ok = await dialogs.confirm({
+    title: "Удалить выбранное?",
+    text: `Элементов: ${selection.size}. Файлы и папки будут помечены на удаление при коммите.`,
+    okText: "Удалить",
+    cancelText: "Отмена",
+    danger: true,
+  });
+  if (!ok) return;
+
+  const remaining = [];
+  const newDeletes = new Set(deleted);
+  const toRemoveFromIndexedDB = [];
+
+  for (const f of files) {
+    if (!pathsToDelete.has(f.path)) { remaining.push(f); continue; }
+    removeDirty(f.path);
+
+    if (f.isNew) {
+      if (mode === "local" && cloned) toRemoveFromIndexedDB.push(f.path);
+    } else {
+      newDeletes.add(f.path);
+    }
+  }
+
+  if (mode === "local" && cloned) {
+    if (toRemoveFromIndexedDB.length) {
+      await storage.deleteFiles(cloned.key, toRemoveFromIndexedDB);
+    }
+    const pending = [...newDeletes].filter((p) => {
+      const f = files.find((x) => x.path === p);
+      return f && !f.isNew;
+    });
+    cloned.pendingDeletes = pending;
+    await storage.updateRepoMeta(cloned.key, { pendingDeletes: pending });
+  }
+
+  clearDeleted();
+  for (const p of newDeletes) {
+    const f = files.find((x) => x.path === p);
+    if (f && !f.isNew) setDeleted(p);
+  }
+
+  setState({ files: remaining });
+  setSelectionMode(false);
+  renderFiles();
+  setStatus(`Помечено на удаление: ${pathsToDelete.size}`);
+}
+
+/* ---------- Откат ---------- */
+
+async function revertFile(path) {
+  const { cloned, mode, files } = getState();
+  if (mode !== "local" || !cloned) return;
+
+  const fileEntry = files.find((f) => f.path === path);
+  if (!fileEntry) return;
+
+  if (fileEntry.isNew) {
+    await storage.deleteFiles(cloned.key, [path]);
+    removeDirty(path);
+    setState({ files: files.filter((f) => f.path !== path) });
+    editorScreen.close();
+    setState({ openFile: null });
+    setScreen(SCREENS.FILES);
+    renderFiles();
+    setStatus("Создание отменено");
+    return;
+  }
+
+  const entry = await storage.getFile(cloned.key, path);
+  if (!entry) return;
+
+  const eol = detectEol(entry.content);
+  entry.content = fromLf(entry.baseContentLf, eol);
+  entry.sha = entry.baseSha;
+  entry.size = new TextEncoder().encode(entry.content).length;
+  await storage.saveFile(cloned.key, entry);
+
+  fileEntry.sha = entry.sha;
+  fileEntry.size = entry.size;
+
+  removeDirty(path);
+  editorScreen.revert({ content: entry.baseContentLf, baseSha: entry.baseSha });
+  renderFiles();
+  setStatus("Изменения отменены");
+}
+
+async function revertAll() {
+  const { cloned, mode, files, deleted } = getState();
+  if (mode !== "local" || !cloned) return;
+
+  const modified = files.filter(
+    (f) => !f.isNew && !deleted.has(f.path) && f.baseSha !== undefined && f.sha !== f.baseSha
+  );
+  const created = files.filter((f) => f.isNew && !deleted.has(f.path));
+  const removed = [...deleted];
+
+  const total = modified.length + created.length + removed.length;
+  if (total === 0) { setStatus("Нечего откатывать"); return; }
+
+  const ok = await dialogs.confirm({
+    title: "Откатить все изменения?",
+    text: `Будет отменено: создано ${created.length}, изменено ${modified.length}, удалено ${removed.length}. Продолжить?`,
+    okText: "Откатить",
+    cancelText: "Отмена",
+    danger: true,
+  });
+  if (!ok) return;
+
+  const toSave = [];
+  for (const f of modified) {
+    const entry = await storage.getFile(cloned.key, f.path);
+    if (!entry) continue;
+    const eol = detectEol(entry.content);
+    entry.content = fromLf(entry.baseContentLf, eol);
+    entry.sha = entry.baseSha;
+    entry.size = new TextEncoder().encode(entry.content).length;
+    toSave.push(entry);
+    f.sha = entry.sha;
+    f.size = entry.size;
+  }
+  if (toSave.length) await storage.saveFiles(cloned.key, toSave);
+
+  const createdPaths = created.map((f) => f.path);
+  if (createdPaths.length) await storage.deleteFiles(cloned.key, createdPaths);
+
+  await storage.updateRepoMeta(cloned.key, { pendingDeletes: [] });
+  cloned.pendingDeletes = [];
+
+  const createdSet = new Set(createdPaths);
+  setState({ files: files.filter((f) => !createdSet.has(f.path)) });
+
+  clearDirty();
+  clearDeleted();
+  editorScreen.close();
+  setState({ openFile: null });
+  setScreen(SCREENS.FILES);
+  renderFiles();
+  setStatus("Все изменения отменены");
+}
+
+/* ---------- Коммит ---------- */
+
+async function openCommit() {
+  const { mode, cloned, dirty, files, base, deleted } = getState();
+
+  if (mode === "local" && cloned) await flushDirtyToLocal();
+
+  const items = [];
+  const usedPaths = new Set();
+
+  for (const f of files) {
+    if (deleted.has(f.path)) continue;
+
+    if (f.isNew) {
+      let currentText = dirty.get(f.path);
+      if (currentText === undefined && mode === "local" && cloned) {
+        const entry = await storage.getFile(cloned.key, f.path);
+        currentText = entry ? toLf(entry.content) : "";
+      }
+      items.push({ path: f.path, baseText: null, currentText: currentText ?? "" });
+      usedPaths.add(f.path);
+      continue;
+    }
+
+    if (f.sha !== f.baseSha) {
+      let baseText = null, currentText = null;
+      if (mode === "local" && cloned) {
+        const entry = await storage.getFile(cloned.key, f.path);
+        if (entry) {
+          baseText = entry.baseContentLf ?? "";
+          currentText = toLf(entry.content);
+        }
+      } else {
+        baseText = base.get(f.path) ?? "";
+        currentText = dirty.get(f.path) ?? "";
+      }
+      if (currentText !== null) {
+        items.push({ path: f.path, baseText, currentText });
+        usedPaths.add(f.path);
+      }
+    }
+  }
+
+  for (const [path, content] of dirty.entries()) {
+    if (usedPaths.has(path) || deleted.has(path)) continue;
+    items.push({
+      path,
+      baseText: base.has(path) ? base.get(path) : null,
+      currentText: content,
+    });
+  }
+
+  for (const path of deleted) {
+    let baseText = "";
+    if (mode === "local" && cloned) {
+      const entry = await storage.getFile(cloned.key, path);
+      baseText = entry?.baseContentLf ?? entry?.content ?? "";
+    } else {
+      baseText = base.get(path) ?? "";
+    }
+    items.push({ path, type: "delete", baseText, currentText: "" });
+  }
+
+  const filtered = items.filter((it) => {
+    if (it.type === "delete") return true;
+    if (it.baseText === null || it.baseText === undefined) return true;
+    if (it.currentText === null || it.currentText === undefined) return true;
+    return it.baseText !== it.currentText;
+  });
+
+  if (filtered.length === 0) { setStatus("Нет изменений"); return; }
+  commitScreen.open(filtered, { mode });
+}
+
+/* ---------- Проверка устаревшей базы ---------- */
+
+async function handleStaleBase(remoteHead, localHead) {
+  const { octokit, repo, mode, dirty, deleted, files } = getState();
+
+  const ourPaths = new Set([...dirty.keys(), ...deleted]);
+  if (mode === "local") {
+    for (const f of files) {
+      if (f.isNew) ourPaths.add(f.path);
+      else if (f.baseSha !== undefined && f.sha !== f.baseSha) ourPaths.add(f.path);
+    }
+  }
+  if (ourPaths.size === 0) return true;
+
+  let remotePaths = new Set();
+  try {
+    const diff = await compareCommits(octokit, repo.owner, repo.name, localHead, remoteHead);
+    for (const f of diff.files || []) {
+      if (f.filename) remotePaths.add(f.filename);
+      if (f.previous_filename) remotePaths.add(f.previous_filename);
+    }
+  } catch (e) {
+    console.warn("compareCommits:", e.message);
+  }
+
+  const overlap = [...ourPaths].filter((p) => remotePaths.has(p));
+  if (overlap.length === 0) {
+    setStatus("На GitHub есть новые коммиты, но конфликтов нет");
+    return true;
+  }
+
+  const list = overlap.slice(0, 8).map((p) => `• ${p}`).join("\n");
+  const more = overlap.length > 8 ? `\n…и ещё ${overlap.length - 8}` : "";
+  return dialogs.confirm({
+    title: "Есть изменения на GitHub",
+    text:
+      `${overlap.length} файлов изменены и у вас, и на сервере:\n\n${list}${more}\n\n` +
+      "Продолжить — ваши версии перезапишут серверные. Лучше отменить и сделать pull.",
+    okText: "Всё равно коммитить",
+    cancelText: "Отмена",
+    danger: true,
+  });
+}
+
+/* ---------- Инкрементальный pull ---------- */
+
+async function runPull(ctx) {
+  const { repo, meta } = ctx;
+  const { octokit, mode, cloned } = getState();
+
+  if (mode === "local" && cloned) {
+    try { await flushDirtyToLocal(); } catch (e) { console.warn(e); }
+  }
+
+  progressBar.show("Подтягивание изменений...");
+  try {
+    const res = await pullRepo(octokit, meta, {
+      onProgress: (done, total) => progressBar.update(done, total),
+    });
+
+    await enterLocalMode(repo, { ...meta, headSha: res.newHeadSha });
+
+    const parts = [];
+    if (res.updated) parts.push(`обновлено ${res.updated}`);
+    if (res.added) parts.push(`добавлено ${res.added}`);
+    if (res.removed) parts.push(`удалено ${res.removed}`);
+    if (res.conflicts?.length) parts.push(`конфликтов ${res.conflicts.length}`);
+
+    setStatus(parts.length ? `Pull: ${parts.join(", ")}` : "Уже актуально");
+
+    if (res.conflicts?.length) {
+      const lines = res.conflicts.slice(0, 10).map((c) => `• ${c.path} — ${c.reason}`).join("\n");
+      const more = res.conflicts.length > 10 ? `\n…и ещё ${res.conflicts.length - 10}` : "";
+      await dialogs.alert({
+        title: "Часть файлов не обновлена",
+        text: `Локальные правки не затронуты в ${res.conflicts.length} файлах:\n\n${lines}${more}`,
+      });
+    }
+  } catch (e) {
+    setStatus("Ошибка pull: " + e.message, true);
+  } finally {
+    progressBar.hide();
+  }
+}
+
+/* ---------- История коммитов ---------- */
+
+async function openHistory() {
+  const { octokit, repo, branch, mode, cloned, baseHeadSha } = getState();
+  if (!repo) return;
+
+  historyScreen.setRepoLabel(`${repo.fullName} · ${branch}`);
+  setScreen(SCREENS.HISTORY);
+  setStatus("Загрузка истории...");
+
+  try {
+    const commits = await listCommits(octokit, repo.owner, repo.name, branch, { perPage: 40 });
+    const currentSha = mode === "local" && cloned ? cloned.headSha : baseHeadSha;
+    historyScreen.render(commits, currentSha);
+    setStatus("");
+  } catch (e) {
+    setStatus("Ошибка загрузки истории: " + e.message, true);
+  }
+}
+
+async function openHistoryCommit(commit) {
+  if (!commit) return;
+  const { octokit, repo, mode } = getState();
+  if (!repo) return;
+
+  setStatus("Загрузка коммита...");
+  try {
+    const commitData = await getCommit(octokit, repo.owner, repo.name, commit.sha);
+    const parents = commitData.parents || [];
+    const parentSha = parents[0]?.sha;
+
+    const files = [];
+
+    if (!parentSha) {
+      files.push({ path: "(первый коммит)", baseText: "", currentText: "" });
+    } else {
+      const diff = await compareCommits(octokit, repo.owner, repo.name, parentSha, commit.sha);
+      const changes = (diff.files || []).slice(0, 60);
+
+      for (const f of changes) {
+        const path = f.filename;
+        try {
+          if (f.status === "removed") {
+            const old = await getFile(octokit, repo.owner, repo.name, path, parentSha);
+            files.push({ path, baseText: old, currentText: "" });
+          } else if (f.status === "added") {
+            const cur = await getFile(octokit, repo.owner, repo.name, path, commit.sha);
+            files.push({ path, baseText: "", currentText: cur });
+          } else if (f.status === "modified") {
+            const cur = await getFile(octokit, repo.owner, repo.name, path, commit.sha);
+            const old = await getFile(octokit, repo.owner, repo.name, path, parentSha);
+            files.push({ path, baseText: old, currentText: cur });
+          } else if (f.status === "renamed") {
+            const cur = await getFile(octokit, repo.owner, repo.name, path, commit.sha);
+            let old = "";
+            if (f.previous_filename) {
+              try {
+                old = await getFile(octokit, repo.owner, repo.name, f.previous_filename, parentSha);
+              } catch {}
+            }
+            files.push({
+              path: `${f.previous_filename} → ${path}`,
+              baseText: old, currentText: cur,
+            });
+          }
+        } catch (e) {
+          files.push({ path, baseText: "", currentText: "(не удалось загрузить)" });
+        }
+      }
+    }
+
+    const isLocal = mode === "local";
+    const canRevert = !isLocal && !!parentSha;
+    const hint = isLocal
+      ? "В локальной копии откат — через «Обновить»"
+      : (!parentSha ? "Первый коммит отменить нельзя" : null);
+    historyModal.openCommit(commit, files, { canRevert, hint });
+    setStatus("");
+  } catch (e) {
+    setStatus("Ошибка: " + e.message, true);
+  }
+}
+
+/* ---------- Коммит ---------- */
+
+async function commit(message) {
+  const { octokit, repo, branch, dirty, mode, cloned, files, openFile, base, deleted } = getState();
+
+  if (mode === "local" && cloned) await flushDirtyToLocal();
+
+  try {
+    const remoteHead = await checkRemoteHead(octokit, {
+      owner: repo.owner, name: repo.name, branch,
+    });
+    const localHead = mode === "local" && cloned ? cloned.headSha : getState().baseHeadSha;
+    if (remoteHead && localHead && remoteHead !== localHead) {
+      const proceed = await handleStaleBase(remoteHead, localHead);
+      if (!proceed) { commitScreen.setBusy(false); return; }
+    }
+  } catch (e) {
+    console.warn("Проверка базы:", e.message);
+  }
+
+  const payload = [];
+  const usedPaths = new Set();
+
+  for (const f of files) {
+    if (deleted.has(f.path)) continue;
+
+    if (f.isNew) {
+      let content;
+      let entry = null;
+      let isBinary = !!f.isBinary;
+
+      if (mode === "local" && cloned) {
+        entry = await storage.getFile(cloned.key, f.path);
+        if (entry) {
+          content = entry.content;
+          isBinary = !!entry.isBinary;
+        } else {
+          content = "";
+        }
+      } else {
+        if (f.isBinary) {
+          content = f.content || "";
+          if (!content) {
+            console.warn("Бинарный файл без содержимого:", f.path);
+          }
+        } else {
+          content = dirty.has(f.path) ? fromLf(dirty.get(f.path), f.eol || "\n") : "";
+        }
+      }
+      payload.push({ path: f.path, content, isNew: true, entry, isBinary });
+      usedPaths.add(f.path);
+      continue;
+    }
+
+    if (f.sha !== f.baseSha) {
+      if (mode === "local" && cloned) {
+        const entry = await storage.getFile(cloned.key, f.path);
+        if (entry) payload.push({
+          path: f.path, content: entry.content, entry,
+          isBinary: !!entry.isBinary,
+        });
+      } else if (dirty.has(f.path)) {
+        payload.push({
+          path: f.path,
+          content: fromLf(dirty.get(f.path), f.eol || "\n"),
+          isBinary: false,
+        });
+      }
+      usedPaths.add(f.path);
+    }
+  }
+
+  for (const [path, contentLf] of dirty.entries()) {
+    if (usedPaths.has(path) || deleted.has(path)) continue;
+    const f = files.find((x) => x.path === path);
+    const eol = f?.eol || "\n";
+    payload.push({ path, content: fromLf(contentLf, eol), isNew: !base.has(path), isBinary: false });
+  }
+
+  for (const path of deleted) payload.push({ path, delete: true });
+
+  const filteredPayload = payload.filter((p) => {
+    if (p.delete) return true;
+    if (p.content === null || p.content === undefined) return true;
+    if (p.isNew) return true;
+    const baseText = p.entry
+      ? (p.entry.baseContentLf ?? "")
+      : (base.has(p.path) ? base.get(p.path) : null);
+    if (baseText === null) return true;
+    return baseText !== p.content;
+  });
+
+  if (filteredPayload.length === 0) { setStatus("Нет изменений"); return; }
+
+  payload.length = 0;
+  payload.push(...filteredPayload);
+
+  commitScreen.setBusy(true);
+  setStatus("Коммит...");
+  progressBar.show(`Коммит: 0 / ${payload.length + 3}`);
+  try {
+    const newHeadSha = await commitFiles(octokit, {
+      owner: repo.owner, repo: repo.name, branch, message,
+      files: payload.map((p) => ({
+        path: p.path,
+        content: p.content,
+        delete: p.delete,
+        isBinary: p.isBinary,
+      })),
+      onProgress: (done, total, label) => {
+        progressBar.update(done, total);
+        if (label) {
+          const el = document.getElementById("progress-label");
+          if (el) el.textContent = `${done} / ${total} · ${label}`;
+        }
+      },
+    });
+
+    if (mode === "local" && cloned) {
+      const toSave = [];
+      for (const p of payload) {
+        if (p.delete) continue;
+        const sha = p.isBinary
+          ? await gitBlobShaFromBase64(p.content)
+          : await gitBlobSha(p.content);
+        if (p.entry) {
+          p.entry.sha = sha;
+          p.entry.baseSha = sha;
+          p.entry.isNew = false;
+          p.entry._movedFrom = null;
+          if (!p.entry.isBinary) {
+            p.entry.baseContentLf = toLf(p.content);
+          }
+          p.entry.size = p.entry.isBinary
+            ? base64ToBytes(p.content).length
+            : new TextEncoder().encode(p.content).length;
+          toSave.push(p.entry);
+        }
+        const f = files.find((x) => x.path === p.path);
+        if (f) {
+          f.sha = sha;
+          f.baseSha = sha;
+          f.isNew = false;
+          f._movedFrom = null;
+        }
+      }
+      if (toSave.length) await storage.saveFiles(cloned.key, toSave);
+
+      const pathsToRemove = payload.filter((p) => p.delete).map((p) => p.path);
+      if (pathsToRemove.length) await storage.deleteFiles(cloned.key, pathsToRemove);
+
+      await storage.updateRepoMeta(cloned.key, {
+        headSha: newHeadSha,
+        pendingDeletes: [],
+      });
+      cloned.headSha = newHeadSha;
+      cloned.pendingDeletes = [];
+      setState({ baseHeadSha: newHeadSha });
+      if (pathsToRemove.length) {
+        const dead = new Set(pathsToRemove);
+        setState({ files: files.filter((f) => !dead.has(f.path)) });
+      }
+    } else {
+      for (const p of payload) {
+        if (p.delete) continue;
+        const sha = p.isBinary
+          ? await gitBlobShaFromBase64(p.content)
+          : await gitBlobSha(p.content);
+        const f = files.find((x) => x.path === p.path);
+        if (f) {
+          f.sha = sha;
+          f.baseSha = sha;
+          f.isNew = false;
+          f._movedFrom = null;
+          if (p.isBinary) f.content = null;
+        }
+        if (openFile?.path === p.path) editorScreen.updateBaseSha(sha);
+        if (!p.isBinary) base.set(p.path, toLf(p.content));
+      }
+      const pathsToRemove = payload.filter((p) => p.delete).map((p) => p.path);
+      if (pathsToRemove.length) {
+        const dead = new Set(pathsToRemove);
+        setState({ files: files.filter((f) => !dead.has(f.path)) });
+      }
+      setState({ baseHeadSha: newHeadSha });
+    }
+
+    clearDirty();
+    clearDeleted();
+    clearRemoteChanges();
+    editorScreen.markSaved();
+    commitScreen.close();
+    renderFiles();
+    setStatus(`Закоммичено: ${newHeadSha.slice(0, 7)}`);
+  } catch (e) {
+    setStatus("Ошибка коммита: " + e.message, true);
+  } finally {
+    progressBar.hide();
+    commitScreen.setBusy(false);
+  }
+}
+
+/* ---------- Утилиты ---------- */
+
+async function confirmDiscard() {
+  const { dirty, mode } = getState();
+  if (mode === "local") return true;
+  if (dirty.size === 0) return true;
+  return dialogs.confirm({
+    title: "Есть несохранённые изменения",
+    text: `Изменено файлов: ${dirty.size}. Продолжить и потерять их?`,
+    okText: "Потерять",
+    cancelText: "Отмена",
+    danger: true,
+  });
+}
+
+function commitCount() {
+  const { files, dirty, deleted } = getState();
+  const changed = new Set(deleted);
+
+  for (const f of files) {
+    if (f.isNew) { changed.add(f.path); continue; }
+    if (f.baseSha !== undefined && f.sha !== f.baseSha) changed.add(f.path);
+  }
+  for (const p of dirty.keys()) changed.add(p);
+  return changed.size;
+}
+
+subscribe(() => {
+  nav.setCommitCount(commitCount());
+});
+
+/* ---------- Старт ---------- */
+
+setScreen(SCREENS.AUTH);
+const savedToken = loadToken();
+if (savedToken) login(savedToken);
+else header.setLoggedOut();
