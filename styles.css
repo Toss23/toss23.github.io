@@ -400,8 +400,17 @@ body {
 #editor-font-size::-moz-range-thumb:hover { background: #1177bb; }
 
 /* Цвета токенов — чуть контрастнее для типов и методов */
-.tok-type { color: #C8D0DD; }
-.tok-method { color: #FFC66D; font-weight: 500; }
+/* Rider-палитра */
+.tok-keyword { color: #CC7832; }
+.tok-control { color: #CC7832; }
+.tok-type { color: #A9B7C6; }
+.tok-method { color: #FFC66D; }
+.tok-string { color: #6A8759; }
+.tok-char { color: #6A8759; }
+.tok-comment { color: #808080; font-style: italic; }
+.tok-number { color: #6897BB; }
+.tok-preprocessor { color: #BBB529; }
+.tok-op { color: #A9B7C6; }
 
 #file-editor {
   flex: 1;

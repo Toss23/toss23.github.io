@@ -1,33 +1,21 @@
 const KEYWORDS = new Set([
-  "abstract", "as", "base", "break", "byte", "case", "catch", "char",
-  "checked", "class", "const", "continue", "decimal", "default", "delegate",
-  "do", "double", "else", "enum", "event", "explicit", "extern", "false",
-  "finally", "fixed", "float", "for", "foreach", "goto", "if", "implicit",
-  "in", "int", "interface", "internal", "is", "lock", "long", "namespace",
-  "new", "null", "object", "operator", "out", "override", "params", "private",
-  "protected", "public", "readonly", "ref", "return", "sbyte", "sealed",
-  "short", "sizeof", "stackalloc", "static", "string", "struct", "switch",
-  "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked",
-  "unsafe", "ushort", "using", "virtual", "void", "volatile", "while",
-  "record", "init", "required", "with", "global", "file", "async", "await",
-  "yield", "get", "set", "value",
-]);
-
-const CONTROL_KEYWORDS = new Set([
-  "if", "else", "for", "foreach", "while", "do", "switch", "case",
-  "default", "break", "continue", "return", "goto", "throw", "try",
-  "catch", "finally", "yield", "await",
-]);
-
-const TYPE_KEYWORDS = new Set([
-  "bool", "byte", "sbyte", "char", "decimal", "double", "float", "int",
-  "uint", "long", "ulong", "short", "ushort", "object", "string", "void",
-  "var", "dynamic", "nint", "nuint",
+  "abstract", "as", "base", "bool", "break", "byte", "case", "catch",
+  "char", "checked", "class", "const", "continue", "decimal", "default",
+  "delegate", "do", "double", "else", "enum", "event", "explicit", "extern",
+  "false", "finally", "fixed", "float", "for", "foreach", "goto", "if",
+  "implicit", "in", "int", "interface", "internal", "is", "lock", "long",
+  "namespace", "new", "null", "object", "operator", "out", "override",
+  "params", "private", "protected", "public", "readonly", "record", "ref",
+  "required", "return", "sbyte", "sealed", "short", "sizeof", "stackalloc",
+  "static", "string", "struct", "switch", "this", "throw", "true", "try",
+  "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "var",
+  "virtual", "void", "volatile", "while", "dynamic", "nint", "nuint",
+  "async", "await", "yield", "init", "with", "file", "global",
 ]);
 
 const TYPE_AFTER = new Set([
-  "new", "typeof", "nameof", "using", "is", "as", "sizeof", "default",
-  "in", "out", "ref", "stackalloc", "override", "virtual",
+  "new", "typeof", "nameof", "is", "as", "sizeof", "default", "in",
+  "out", "ref", "stackalloc",
 ]);
 
 function isIdentStart(c) {
@@ -179,11 +167,7 @@ export function tokenize(code) {
       const word = code.slice(i, j);
       const bare = c === "@" ? word.slice(1) : word;
       let type = "ident";
-      if (KEYWORDS.has(bare)) {
-        if (CONTROL_KEYWORDS.has(bare)) type = "control";
-        else if (TYPE_KEYWORDS.has(bare)) type = "type";
-        else type = "keyword";
-      }
+      if (KEYWORDS.has(bare)) type = "keyword";
       push(type, word);
       i = j;
       continue;
@@ -200,7 +184,8 @@ export function tokenize(code) {
     i += op.length;
   }
 
-  // Второй проход: типы, методы, статические классы.
+  // Второй проход: методы, типы, статические классы.
+  // Приоритет строго сверху вниз.
   for (let k = 0; k < tokens.length; k++) {
     const t = tokens[k];
     if (t.type !== "ident") continue;
@@ -213,26 +198,26 @@ export function tokenize(code) {
     const prev = p >= 0 ? tokens[p] : null;
     const next = nx < tokens.length ? tokens[nx] : null;
 
-    // Метод: идентификатор перед скобкой
+    // 1. Идентификатор перед "(" — метод (Console.WriteLine, Compress, Main).
     if (next && next.text === "(") {
       t.type = "method";
       continue;
     }
 
-    // После точки: заглавная — тип (Console в Console.WriteLine),
-    // строчная — свойство/поле, оставляем нейтральным.
+    // 2. После точки — заглавная → тип (Console, String, Math),
+    //    строчная → свойство, оставляем как есть.
     if (prev && prev.type === "op" && prev.text === ".") {
       if (/^[A-Z]/.test(t.text)) t.type = "type";
       continue;
     }
 
-    // После new/typeof/override/etc — точно тип
+    // 3. После new/typeof/nameof/etc — точно тип.
     if (prev && prev.type === "keyword" && TYPE_AFTER.has(prev.text)) {
       t.type = "type";
       continue;
     }
 
-    // Заглавная — тип (класс, интерфейс, структура, enum)
+    // 4. Заглавная буква — вероятно класс/структура/интерфейс.
     if (/^[A-Z][A-Za-z0-9_]*$/.test(t.text)) {
       t.type = "type";
       continue;
