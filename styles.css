@@ -148,7 +148,7 @@ body {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   touch-action: manipulation;
-}}
+}
 .list li:hover { background: #2a2d2e; }
 .list li:active { background: #333; }
 .list li.empty {
