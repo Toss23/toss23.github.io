@@ -32,6 +32,8 @@ import { showBusy, hideBusy, updateBusyText, forceHideBusy } from "@ui/busy.js";
 import { initHistoryModal } from "@ui/history-modal.js";
 import { initRepoActionsModal } from "@ui/repo-actions-modal.js";
 import { initUpdateModal } from "@ui/update-modal.js";
+import { initAiModal } from "@ui/ai-modal.js";
+import { parseJson, checkChange, applyChange } from "@api/ai-patches.js";
 
 import { initAuthScreen } from "@screens/auth-screen.js";
 import { initReposScreen } from "@screens/repos-screen.js";
@@ -149,6 +151,19 @@ const dropZone = initDropZone({
   },
   onFiles: (entries) => processUploadedEntries(entries),
 });
+
+const aiModal = initAiModal({
+  onLoadJson: handleAiJsonLoad,
+  onApply: handleAiApply,
+});
+
+const btnAi = document.getElementById("btn-ai");
+if (btnAi) {
+  btnAi.addEventListener("click", () => {
+    if (!getState().mode) return;
+    aiModal.open();
+  });
+}
 
 const editorScreen = initEditorScreen({
   onStateChange: handleEditorState,
@@ -1059,6 +1074,165 @@ function askReplace(path) {
       onDismiss: () => resolve("cancel"),
     });
   });
+}
+
+/* ---------- AI-патчи ---------- */
+
+async function getCurrentFileContent(path) {
+  const { octokit, repo, branch, dirty, mode, cloned, files, deleted } = getState();
+
+  if (deleted.has(path)) return null;
+
+  // 1. Несохранённые правки
+  if (dirty.has(path)) {
+    return dirty.get(path);
+  }
+
+  // 2. Local — из IndexedDB
+  if (mode === "local" && cloned) {
+    const entry = await storage.getFile(cloned.key, path);
+    if (!entry) return null;
+    if (entry.isBinary) return { binary: true };
+    return toLf(entry.content);
+  }
+
+  // 3. Remote — из state.files
+  const file = files.find(f => f.path === path);
+  if (!file) return null;
+  if (file.isBinary) return { binary: true };
+  if (file.isNew && typeof file.content === "string") {
+    return file.content;
+  }
+
+  // 4. Remote — из GitHub
+  if (!file.sha) return null;
+  try {
+    const raw = await getFile(octokit, repo.owner, repo.name, path, branch);
+    return toLf(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function handleAiJsonLoad(text) {
+  let parsed;
+  try {
+    parsed = parseJson(text);
+  } catch (e) {
+    await dialogs.alert({ title: "Ошибка JSON", text: e.message });
+    return;
+  }
+
+  const items = [];
+  for (const change of parsed.changes) {
+    const content = await getCurrentFileContent(change.path);
+    const check = checkChange(change, content);
+    items.push({ change, check, checked: check.ok });
+  }
+
+  aiModal.showPreview(items);
+}
+
+async function handleAiApply(changes) {
+  if (!changes.length) return;
+  const applied = [];
+  const failed = [];
+
+  for (const change of changes) {
+    try {
+      const content = await getCurrentFileContent(change.path);
+      const check = checkChange(change, content);
+      if (!check.ok) {
+        failed.push({ change, reason: check.reason });
+        continue;
+      }
+      const result = applyChange(change, content);
+      await applyAiResult(change.path, result);
+      applied.push({ type: change.type, path: change.path });
+    } catch (e) {
+      failed.push({ change, reason: e.message || "неизвестная ошибка" });
+    }
+  }
+
+  aiModal.showReport({ applied, failed });
+  renderFiles();
+}
+
+async function applyAiResult(path, result) {
+  const { mode, cloned } = getState();
+
+  // Удаление
+  if (result.delete) {
+    setDeleted(path);
+    removeDirty(path);
+
+    // Убираем из state.files (визуально исчезнет сразу)
+    setState({ files: getState().files.filter(f => f.path !== path) });
+
+    if (mode === "local" && cloned) {
+      const existing = await storage.getFile(cloned.key, path);
+      if (existing && !existing.isNew) {
+        const pending = [...getState().deleted];
+        cloned.pendingDeletes = pending;
+        await storage.updateRepoMeta(cloned.key, { pendingDeletes: pending });
+      } else if (existing) {
+        await storage.deleteFiles(cloned.key, [path]);
+      }
+    }
+    return;
+  }
+
+  // Запись содержимого (LF)
+  const lfContent = toLf(result.content);
+  setDirty(path, lfContent);
+  removeDeleted(path);
+
+  const files = getState().files;
+  const idx = files.findIndex(f => f.path === path);
+
+  if (mode === "local" && cloned) {
+    const existing = await storage.getFile(cloned.key, path);
+    const eol = existing ? (detectEol(existing.content) || "\n") : "\n";
+    const contentOrig = fromLf(lfContent, eol);
+    const newSha = await gitBlobSha(contentOrig);
+
+    const entry = {
+      path,
+      content: contentOrig,
+      sha: newSha,
+      baseSha: existing ? existing.baseSha : null,
+      baseContentLf: existing ? existing.baseContentLf : "",
+      size: new TextEncoder().encode(contentOrig).length,
+      isNew: existing ? !!existing.isNew : true,
+      isBinary: false,
+    };
+    await storage.saveFile(cloned.key, entry);
+
+    const meta = {
+      path,
+      sha: newSha,
+      baseSha: existing ? existing.baseSha : null,
+      size: entry.size,
+      isNew: entry.isNew,
+      isBinary: false,
+      eol,
+    };
+    if (idx >= 0) {
+      const arr = [...files]; arr[idx] = meta;
+      setState({ files: arr });
+    } else {
+      setState({ files: [...files, meta] });
+    }
+  } else {
+    // Remote — если файла не было в списке, добавляем как новый
+    if (idx < 0) {
+      setState({ files: [...files, {
+        path, sha: null, baseSha: null,
+        size: new TextEncoder().encode(lfContent).length,
+        isNew: true, eol: "\n", isBinary: false,
+      }]});
+    }
+  }
 }
 
 /* ---------- Перемещение drag-and-drop ---------- */
