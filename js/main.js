@@ -1119,26 +1119,33 @@ async function handleGenerateProjectMap() {
       files: result,
     });
 
-    const blob = new Blob([md], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "project-map.md";
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
+    // Оверлей скроется в finally, а предпросмотр откроется
+    // в следующем тике — чтобы точно оказаться поверх и без busy.
     setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 300);
-
-    setStatus("Карта проекта скачана");
+      aiModal.openMapPreview(md, () => downloadText("project-map.md", md));
+    }, 0);
+    setStatus("Карта проекта готова к скачиванию");
   } catch (e) {
     setStatus("Ошибка генерации: " + e.message, true);
   } finally {
     forceHideBusy();
     progressBar.hide();
   }
+}
+
+function downloadText(filename, text, mime = "text/markdown;charset=utf-8") {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 300);
 }
 
 

@@ -1237,3 +1237,21 @@ html, body, .list, .move-list, #file-content, .diff-box {
   resize: vertical;
   margin-bottom: 6px;
 }
+
+.ai-map-preview-body {
+  flex: 1;
+  width: 100%;
+  min-height: 40vh;
+  max-height: 60vh;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  background: #1a1a1a;
+  color: #ddd;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 10px;
+  box-sizing: border-box;
+  resize: vertical;
+  outline: none;
+}

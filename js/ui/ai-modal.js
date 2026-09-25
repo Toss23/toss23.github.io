@@ -8,6 +8,11 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap }) {
   const bodyEl = $("ai-body");
   const footerEl = $("ai-footer");
   const closeBtn = $("ai-close");
+  const mapModal = $("ai-map-preview-modal");
+  const mapBody = $("ai-map-preview-body");
+  const mapClose = $("ai-map-preview-close");
+  const mapCancel = $("ai-map-preview-cancel");
+  const mapDownload = $("ai-map-preview-download");
 
   if (!modal) return { open() {}, showPreview() {}, showReport() {}, close() {} };
 
@@ -15,6 +20,26 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap }) {
 
   function close() { modal.classList.add("hidden"); }
   if (closeBtn) closeBtn.addEventListener("click", close);
+
+  function openMapPreview(content, onDownload) {
+    if (!mapModal || !mapBody) return;
+    mapBody.value = content || "";
+    mapModal.classList.remove("hidden");
+    if (mapDownload) {
+      mapDownload.onclick = () => {
+        try { if (onDownload) onDownload(); }
+        catch (e) { console.error("map download:", e); }
+      };
+    }
+  }
+
+  function closeMapPreview() {
+    if (!mapModal) return;
+    mapModal.classList.add("hidden");
+  }
+
+  if (mapClose) mapClose.addEventListener("click", closeMapPreview);
+  if (mapCancel) mapCancel.addEventListener("click", closeMapPreview);
 
   if (btnMap && onGenerateMap) {
     btnMap.addEventListener("click", () => onGenerateMap());
@@ -199,5 +224,7 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap }) {
     showPreview(items) { renderList(items); },
     showReport(report) { renderReport(report); },
     close,
+    openMapPreview(content, onDownload) { openMapPreview(content, onDownload); },
+    closeMapPreview() { closeMapPreview(); },
   };
 }
