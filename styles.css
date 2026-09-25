@@ -418,7 +418,10 @@ body {
 .tok-keyword { color: #CC7832; }
 .tok-control { color: #CC7832; }
 .tok-type { color: #A9B7C6; }
-.tok-interface { color: #83C0DC; }
+.tok-interface { color: #4FC3F7; }
+.tok-field { color: #9876AA; }
+.tok-property { color: #9876AA; }
+.tok-event { color: #C79BE8; }
 .tok-attribute { color: #BBB529; }
 .tok-method { color: #FFC66D; }
 .tok-string { color: #6A8759; }
