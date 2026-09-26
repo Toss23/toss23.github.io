@@ -183,6 +183,7 @@ function parseCsharpFile(content) {
           bases: (typeMatch[3] || "").trim().replace(/^:\s*/, ""),
           members: [],
         };
+        if (typeMatch[1] === "enum") pendingType.values = [];
       }
     }
 
@@ -198,8 +199,23 @@ function parseCsharpFile(content) {
 
     const current = typeStack[typeStack.length - 1];
     if (current && depth === current.bodyDepth) {
-      const member = parseCsharpMember(raw.trim());
-      if (member) current.type.members.push(member);
+      if (current.type.kind === "enum") {
+        const trimmed = raw.trim();
+        if (trimmed && !trimmed.startsWith("[") && !trimmed.startsWith("//")) {
+          const clean2 = stripCsStrings(trimmed)
+            .replace(/\[[^\]]*\]/g, "")
+            .split("//")[0];
+          const names = clean2.match(/\b[A-Za-z_][A-Za-z0-9_]*\b/g) || [];
+          for (const n of names) {
+            if (CS_KEYWORDS.has(n)) continue;
+            if (n === current.type.name) continue;
+            if (!current.type.values.includes(n)) current.type.values.push(n);
+          }
+        }
+      } else {
+        const member = parseCsharpMember(raw.trim());
+        if (member) current.type.members.push(member);
+      }
     }
 
     depth += opens - closes;
@@ -215,22 +231,6 @@ function parseCsharpFile(content) {
 /* ============================================================
    Общая структура файла
    ============================================================ */
-
-export const SERVICE_FOLDER_RE = /^(bin|obj|Debug|Release|packages|node_modules|\.vs|\.vscode|\.idea|\.git|TestResults|artifacts|net\d+(?:\.\d+)?|netstandard\d+(?:\.\d+)?|netcoreapp\d+(?:\.\d+)?)$/i;
-
-export function hasServiceFolder(path) {
-  if (typeof path !== "string") return false;
-  const parts = path.split("/");
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (SERVICE_FOLDER_RE.test(parts[i])) return true;
-  }
-  return false;
-}
-
-export function isAnalyzable(path) {
-  const k = kindOf(path);
-  return k === "js" || k === "cs";
-}
 
 export function parseFile(path, content) {
   const kind = kindOf(path);
@@ -284,7 +284,7 @@ function renderTree(paths) {
       if (isDir) walk(node[key], prefix + "  ");
     }
   }
-  walk(tree, "  ");
+  walk(tree, "");
   return lines.join("\n");
 }
 
@@ -299,36 +299,36 @@ function renderJsSection(info) {
                        exports.values.length || exports.classes.length ||
                        exports.reExports.length || privates.length;
   if (!hasSomething) {
-    out.push("_Нет экспортов и импортов._");
+    out.push("нет экспортов и импортов");
     out.push("");
     return out.join("\n");
   }
   if (imports.length) {
-    out.push("**Импорты:**");
+    out.push("imports:");
     const seen = new Set();
     for (const im of imports) {
       if (seen.has(im.from)) continue;
       seen.add(im.from);
-      out.push("- `" + im.from + "`");
+      out.push("  " + im.from);
     }
     out.push("");
   }
   const exportLines = [];
   for (const f of exports.fns) {
-    exportLines.push("- `" + (f.async ? "async " : "") + f.name + "(" + f.args + ")`");
+    exportLines.push("  " + (f.async ? "async " : "") + f.name + "(" + f.args + ")");
   }
-  for (const c of exports.classes) exportLines.push("- class `" + c + "`");
-  for (const v of exports.values) exportLines.push("- const `" + v + "`");
-  for (const r of exports.reExports) exportLines.push("- re-export `" + r + "`");
+  for (const c of exports.classes) exportLines.push("  class " + c);
+  for (const v of exports.values) exportLines.push("  const " + v);
+  for (const r of exports.reExports) exportLines.push("  re-export " + r);
   if (exportLines.length) {
-    out.push("**Экспорт:**");
+    out.push("exports:");
     out.push(...exportLines);
     out.push("");
   }
   if (privates.length) {
-    out.push("**Локальные функции:**");
+    out.push("private:");
     for (const f of privates) {
-      out.push("- `" + (f.async ? "async " : "") + f.name + "(" + f.args + ")`");
+      out.push("  " + (f.async ? "async " : "") + f.name + "(" + f.args + ")");
     }
     out.push("");
   }
@@ -340,38 +340,47 @@ function renderCsSection(info) {
   const { usings, namespace, types } = info.parsed.csharp;
 
   if (namespace) {
-    out.push("**Пространство имён:** `" + namespace + "`");
+    out.push("namespace: " + namespace);
     out.push("");
   }
   if (usings.length) {
-    out.push("**Using:**");
-    for (const u of usings) out.push("- `" + u + "`");
+    out.push("using:");
+    for (const u of usings) out.push("  " + u);
     out.push("");
   }
   if (!types.length) {
-    out.push("_Нет объявлений типов._");
+    out.push("нет объявлений типов");
     out.push("");
     return out.join("\n");
   }
 
   for (const t of types) {
-    const header = "`" + t.kind + " " + t.name + "`" + (t.bases ? " : " + t.bases : "");
-    out.push("**" + header + "**");
+    const head = t.kind + " " + t.name + (t.bases ? " : " + t.bases : "");
+    out.push(head);
+
+    if (t.kind === "enum") {
+      const values = t.values || [];
+      if (values.length) out.push("  " + values.join(", "));
+      out.push("");
+      continue;
+    }
+
     if (!t.members.length) {
-      out.push("- _(нет членов)_");
-    } else {
-      for (const m of t.members) {
-        if (m.kind === "method") {
-          out.push("- `" + m.returnType + " " + m.name + "(" + m.args + ")`");
-        } else if (m.kind === "ctor") {
-          out.push("- `" + m.name + "(" + m.args + ")` _(конструктор)_");
-        } else if (m.kind === "property") {
-          out.push("- `" + m.type + " " + m.name + "` _(свойство)_");
-        } else if (m.kind === "field") {
-          out.push("- `" + m.type + " " + m.name + "` _(поле)_");
-        } else if (m.kind === "event") {
-          out.push("- `event " + m.type + " " + m.name + "`");
-        }
+      out.push("");
+      continue;
+    }
+
+    for (const m of t.members) {
+      if (m.kind === "method") {
+        out.push("  " + m.returnType + " " + m.name + "(" + m.args + ")");
+      } else if (m.kind === "ctor") {
+        out.push("  " + m.name + "(" + m.args + ")  — конструктор");
+      } else if (m.kind === "property") {
+        out.push("  " + m.type + " " + m.name + "  — свойство");
+      } else if (m.kind === "field") {
+        out.push("  " + m.type + " " + m.name + "  — поле");
+      } else if (m.kind === "event") {
+        out.push("  event " + m.type + " " + m.name);
       }
     }
     out.push("");
@@ -383,7 +392,7 @@ function renderCsSection(info) {
 function renderFileSection(info) {
   const { path, size, kind } = info;
   const out = [];
-  out.push("### " + path);
+  out.push("### " + path + " · " + formatSize(size));
 
   if (kind === "js") {
     out.push(renderJsSection(info));
@@ -394,7 +403,7 @@ function renderFileSection(info) {
     return out.join("\n");
   }
 
-  out.push("_" + kind.toUpperCase() + " \u00B7 не анализируется_");
+  out.push("(" + kind.toUpperCase() + ", не анализируется)");
   out.push("");
   return out.join("\n");
 }
@@ -411,19 +420,17 @@ export function renderProjectMap({ repoLabel, branch, mode, files }) {
   const lines = [];
   lines.push("# Карта проекта");
   lines.push("");
-  lines.push("- **Репозиторий:** " + (repoLabel || "\u2014"));
-  lines.push("- **Ветка:** " + (branch || "\u2014"));
-  lines.push("- **Режим:** " + (mode || "\u2014"));
-  lines.push("- **Сгенерировано:** " + dateStr);
-  lines.push("- **Файлов:** " + files.length);
-  lines.push("- **Общий размер:** " + formatSize(totalBytes));
+  lines.push("Репозиторий: " + (repoLabel || "—"));
+  lines.push("Ветка: " + (branch || "—"));
+  lines.push("Режим: " + (mode || "—"));
+  lines.push("Сгенерировано: " + dateStr);
+  lines.push("Файлов: " + files.length);
+  lines.push("Общий размер: " + formatSize(totalBytes));
   lines.push("");
 
   lines.push("## Структура");
   lines.push("");
-  lines.push("```");
   lines.push(renderTree(files.map((f) => f.path)));
-  lines.push("```");
   lines.push("");
 
   lines.push("## Файлы");
@@ -435,9 +442,8 @@ export function renderProjectMap({ repoLabel, branch, mode, files }) {
   }
 
   lines.push("");
-  lines.push("---");
-  lines.push("");
-  lines.push("_Конец карты. Тела функций не включены. Для точечных патчей ИИ должен запросить содержимое конкретного файла._");
+  lines.push("# Конец");
+  lines.push("Тела функций не включены.");
 
   return lines.join("\n");
 }
