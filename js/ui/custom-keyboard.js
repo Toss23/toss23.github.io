@@ -1,5 +1,6 @@
 import { $ } from "@core/dom.js";
 import { getRows } from "@core/keyboard-layouts.js";
+import { subscribe } from "@core/store.js";
 
 const LANG_KEY = "kb_lang";
 const MODE_KEY = "kb_custom_enabled";
@@ -14,7 +15,7 @@ function isTouchDevice() {
 function loadEnabledPref() {
   try {
     const v = localStorage.getItem(MODE_KEY);
-    if (v === null) return true; // по умолчанию — своя клавиатура
+    if (v === null) return true;
     return v === "1";
   } catch { return true; }
 }
@@ -27,12 +28,9 @@ export function initCustomKeyboard({ editorScreen }) {
   const textarea = $("file-content");
   if (!textarea || !editorScreen) return null;
 
-  // На тач-устройствах — по умолчанию своя клавиатура, иначе — системная.
   const isTouch = isTouchDevice();
-
   let enabled = isTouch ? loadEnabledPref() : false;
 
-  // Контейнер создаём динамически.
   let container = $("custom-keyboard");
   if (!container) {
     container = document.createElement("div");
@@ -49,19 +47,12 @@ export function initCustomKeyboard({ editorScreen }) {
   let lastTouchTime = 0;
 
   function applyInputMode() {
-    if (enabled) {
-      textarea.setAttribute("inputmode", "none");
-      textarea.setAttribute("autocomplete", "off");
-      textarea.setAttribute("autocorrect", "off");
-      textarea.setAttribute("autocapitalize", "off");
-      textarea.setAttribute("spellcheck", "false");
-    } else {
-      textarea.removeAttribute("inputmode");
-      textarea.setAttribute("autocomplete", "off");
-      textarea.setAttribute("autocorrect", "off");
-      textarea.setAttribute("autocapitalize", "off");
-      textarea.setAttribute("spellcheck", "false");
-    }
+    textarea.setAttribute("autocomplete", "off");
+    textarea.setAttribute("autocorrect", "off");
+    textarea.setAttribute("autocapitalize", "off");
+    textarea.setAttribute("spellcheck", "false");
+    if (enabled) textarea.setAttribute("inputmode", "none");
+    else textarea.removeAttribute("inputmode");
   }
 
   function setLang(l) {
@@ -75,6 +66,7 @@ export function initCustomKeyboard({ editorScreen }) {
       shift = false;
     }
     editorScreen.insertAtCursor?.(text);
+    editorScreen.focus?.();
     if (panel === "letters") render();
   }
 
@@ -82,9 +74,9 @@ export function initCustomKeyboard({ editorScreen }) {
     if (typeof key === "string") { insert(key); return; }
     switch (key.a) {
       case "shift": shift = !shift; render(); break;
-      case "backspace": editorScreen.backspace?.(); break;
+      case "backspace": editorScreen.backspace?.(); editorScreen.focus?.(); break;
       case "space": insert(" "); break;
-      case "enter": editorScreen.enterKey?.(); break;
+      case "enter": editorScreen.enterKey?.(); editorScreen.focus?.(); break;
       case "numbers": panel = "numbers"; shift = false; render(); break;
       case "symbols": panel = "symbols"; shift = false; render(); break;
       case "letters": panel = "letters"; shift = false; render(); break;
@@ -160,7 +152,6 @@ export function initCustomKeyboard({ editorScreen }) {
     if (!visible) return;
     visible = false;
     container.classList.add("hidden");
-    if (document.activeElement === textarea) textarea.blur();
   }
 
   function setEnabled(v) {
@@ -173,10 +164,12 @@ export function initCustomKeyboard({ editorScreen }) {
   }
 
   textarea.addEventListener("focus", () => show());
-  textarea.addEventListener("blur", () => {
-    setTimeout(() => {
-      if (document.activeElement !== textarea) hide();
-    }, 120);
+
+  // Не скрываем по blur: на тач-устройствах он срабатывает ложно и клавиатура пропадает сама.
+  // Скрываем только при уходе с экрана редактора.
+  subscribe((state) => {
+    if (!enabled) return;
+    if (state.screen !== "editor" && visible) hide();
   });
 
   applyInputMode();

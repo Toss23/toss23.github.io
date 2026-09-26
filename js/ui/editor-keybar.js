@@ -13,6 +13,8 @@ const isTouchDevice = (() => {
 const BUTTONS = [
   { label: "⇥", title: "Таб", action: "indent" },
   { label: "⇤", title: "Убрать отступ", action: "unindent" },
+  { label: ".", key: "." },
+  { label: ",", key: "," },
   { label: "\"", key: "\"" },
   { label: ";", key: ";" },
   { label: "=", key: "=" },
