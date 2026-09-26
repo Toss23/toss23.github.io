@@ -228,9 +228,9 @@ const editorScreen = initEditorScreen({
   onContextMenu: showEditorContextMenu,
 });
 
-initCustomKeyboard({ editorScreen });
+const customKeyboard = const customKeyboard = initCustomKeyboard({ editorScreen });
 
-initEditorToolbar({ editorScreen });
+initEditorToolbar({ editorScreen, customKeyboard });
 initEditorKeybar({
   editorScreen,
   onShow: () => {

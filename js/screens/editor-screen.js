@@ -707,5 +707,6 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
       return { path: base.path, current, unsaved: current !== savedLf };
     },
     focus() { if (textarea) textarea.focus(); },
+    blur() { if (textarea) textarea.blur(); },
   };
 }

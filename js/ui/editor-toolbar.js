@@ -5,7 +5,7 @@ const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 4;
 const MAX_FONT_SIZE = 24;
 
-export function initEditorToolbar({ editorScreen }) {
+export function initEditorToolbar({ editorScreen, customKeyboard }) {
   const btnUndo = $("btn-editor-undo");
   const btnRedo = $("btn-editor-redo");
   const btnFind = $("btn-editor-find");
@@ -202,6 +202,18 @@ export function initEditorToolbar({ editorScreen }) {
   }
 
   loadFontSize();
+
+  // Переключатель кастомной клавиатуры.
+  const customKbToggle = $("editor-custom-keyboard");
+  const customKbRow = customKbToggle ? customKbToggle.closest(".editor-settings-row") : null;
+  if (!customKeyboard || !customKeyboard.isTouch || !customKeyboard.isTouch()) {
+    if (customKbRow) customKbRow.classList.add("hidden");
+  } else if (customKbToggle) {
+    customKbToggle.checked = customKeyboard.isEnabled();
+    customKbToggle.addEventListener("change", () => {
+      customKeyboard.setEnabled(customKbToggle.checked);
+    });
+  }
 
   return { hidePanel, applyFontSize };
 }

@@ -2,6 +2,7 @@ import { $ } from "@core/dom.js";
 import { getRows } from "@core/keyboard-layouts.js";
 
 const LANG_KEY = "kb_lang";
+const MODE_KEY = "kb_custom_enabled";
 
 function isTouchDevice() {
   if (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0) return true;
@@ -10,21 +11,28 @@ function isTouchDevice() {
   catch { return false; }
 }
 
+function loadEnabledPref() {
+  try {
+    const v = localStorage.getItem(MODE_KEY);
+    if (v === null) return true; // по умолчанию — своя клавиатура
+    return v === "1";
+  } catch { return true; }
+}
+
+function saveEnabledPref(v) {
+  try { localStorage.setItem(MODE_KEY, v ? "1" : "0"); } catch {}
+}
+
 export function initCustomKeyboard({ editorScreen }) {
   const textarea = $("file-content");
-  if (!textarea || !editorScreen) return { show() {}, hide() {} };
+  if (!textarea || !editorScreen) return null;
 
-  // Только для тач-устройств.
-  if (!isTouchDevice()) return { show() {}, hide() {} };
+  // На тач-устройствах — по умолчанию своя клавиатура, иначе — системная.
+  const isTouch = isTouchDevice();
 
-  // Отключаем системную клавиатуру: focus без ввода.
-  textarea.setAttribute("inputmode", "none");
-  textarea.setAttribute("autocomplete", "off");
-  textarea.setAttribute("autocorrect", "off");
-  textarea.setAttribute("autocapitalize", "off");
-  textarea.setAttribute("spellcheck", "false");
+  let enabled = isTouch ? loadEnabledPref() : false;
 
-  // Контейнер создаём динамически, чтобы не трогать HTML.
+  // Контейнер создаём динамически.
   let container = $("custom-keyboard");
   if (!container) {
     container = document.createElement("div");
@@ -40,6 +48,22 @@ export function initCustomKeyboard({ editorScreen }) {
   let visible = false;
   let lastTouchTime = 0;
 
+  function applyInputMode() {
+    if (enabled) {
+      textarea.setAttribute("inputmode", "none");
+      textarea.setAttribute("autocomplete", "off");
+      textarea.setAttribute("autocorrect", "off");
+      textarea.setAttribute("autocapitalize", "off");
+      textarea.setAttribute("spellcheck", "false");
+    } else {
+      textarea.removeAttribute("inputmode");
+      textarea.setAttribute("autocomplete", "off");
+      textarea.setAttribute("autocorrect", "off");
+      textarea.setAttribute("autocapitalize", "off");
+      textarea.setAttribute("spellcheck", "false");
+    }
+  }
+
   function setLang(l) {
     lang = l;
     try { localStorage.setItem(LANG_KEY, l); } catch {}
@@ -54,36 +78,22 @@ export function initCustomKeyboard({ editorScreen }) {
     if (panel === "letters") render();
   }
 
-  function backspace() { editorScreen.backspace?.(); }
-  function enterKey() { editorScreen.enterKey?.(); }
-
-  function toggleShift() {
-    shift = !shift;
-    render();
-  }
-
-  function switchPanel(p) {
-    panel = p;
-    shift = false;
-    render();
-  }
-
   function handleKey(key) {
     if (typeof key === "string") { insert(key); return; }
     switch (key.a) {
-      case "shift": toggleShift(); break;
-      case "backspace": backspace(); break;
+      case "shift": shift = !shift; render(); break;
+      case "backspace": editorScreen.backspace?.(); break;
       case "space": insert(" "); break;
-      case "enter": enterKey(); break;
-      case "numbers": switchPanel("numbers"); break;
-      case "symbols": switchPanel("symbols"); break;
-      case "letters": switchPanel("letters"); break;
+      case "enter": editorScreen.enterKey?.(); break;
+      case "numbers": panel = "numbers"; shift = false; render(); break;
+      case "symbols": panel = "symbols"; shift = false; render(); break;
+      case "letters": panel = "letters"; shift = false; render(); break;
       case "lang": setLang(lang === "en" ? "ru" : "en"); break;
       case "hide": hide(); break;
     }
   }
 
-  function makeKey(label, actionOrKey, opts = {}) {
+  function makeKey(label, payload, opts = {}) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.tabIndex = -1;
@@ -91,8 +101,6 @@ export function initCustomKeyboard({ editorScreen }) {
     if (opts.wide) btn.style.flex = String(opts.wide);
     if (opts.special) btn.classList.add("special");
     btn.textContent = label;
-
-    const payload = actionOrKey;
 
     btn.addEventListener("mousedown", (e) => {
       if (Date.now() - lastTouchTime < 600) return;
@@ -118,34 +126,29 @@ export function initCustomKeyboard({ editorScreen }) {
       rowEl.className = "kb-row";
       for (const k of row) {
         const isObj = typeof k === "object";
-        const label = isObj ? k.t : k;
-        const payload = isObj ? k : k;
-        const btn = makeKey(label, payload, {
-          wide: isObj ? k.w : 1,
-          special: isObj,
-        });
-        rowEl.appendChild(btn);
+        rowEl.appendChild(makeKey(
+          isObj ? k.t : k,
+          isObj ? k : k,
+          { wide: isObj ? k.w : 1, special: isObj }
+        ));
       }
       container.appendChild(rowEl);
     }
 
-    // Нижний ряд: [?123/ABC] [🌐] [space] [⌄] [⏎]
     const bottom = document.createElement("div");
     bottom.className = "kb-row";
-
     const panelLabel = panel === "letters" ? "?123" : "ABC";
     const panelAction = panel === "letters" ? "numbers" : "letters";
-
     bottom.appendChild(makeKey(panelLabel, { a: panelAction }, { wide: 1.5, special: true }));
     bottom.appendChild(makeKey("🌐", { a: "lang" }, { wide: 1.5, special: true }));
     bottom.appendChild(makeKey("⎵", { a: "space" }, { wide: 5, special: true }));
     bottom.appendChild(makeKey("⌄", { a: "hide" }, { wide: 1.5, special: true }));
     bottom.appendChild(makeKey("⏎", { a: "enter" }, { wide: 2, special: true }));
-
     container.appendChild(bottom);
   }
 
   function show() {
+    if (!enabled) return;
     if (visible) return;
     visible = true;
     container.classList.remove("hidden");
@@ -157,8 +160,16 @@ export function initCustomKeyboard({ editorScreen }) {
     if (!visible) return;
     visible = false;
     container.classList.add("hidden");
-    // Если textarea активна — снимаем фокус, чтобы не было мигания курсора без клавиатуры.
     if (document.activeElement === textarea) textarea.blur();
+  }
+
+  function setEnabled(v) {
+    const next = !!v;
+    if (next === enabled) return;
+    enabled = next;
+    saveEnabledPref(enabled);
+    applyInputMode();
+    if (!enabled) hide();
   }
 
   textarea.addEventListener("focus", () => show());
@@ -168,7 +179,15 @@ export function initCustomKeyboard({ editorScreen }) {
     }, 120);
   });
 
+  applyInputMode();
   render();
 
-  return { show, hide, isVisible: () => visible };
+  return {
+    show,
+    hide,
+    isVisible: () => visible,
+    isEnabled: () => enabled,
+    setEnabled,
+    isTouch: () => isTouch,
+  };
 }
