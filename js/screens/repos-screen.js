@@ -6,6 +6,7 @@ export function initReposScreen({ onSelect }) {
   const filter = $("repo-filter");
   let all = [];
   let clonedMap = new Map(); // fullName -> bytes
+  let dirtySet = new Set(); // fullName с незакоммиченными изменениями
 
   filter.addEventListener("input", render);
 
@@ -39,6 +40,7 @@ export function initReposScreen({ onSelect }) {
 
       const li = el("li", { class: "entry", onclick: () => onSelect(r) }, children);
       if (isCloned) li.classList.add("cloned");
+      if (dirtySet.has(r.full_name)) li.classList.add("dirty");
       list.appendChild(li);
     }
 
@@ -48,14 +50,16 @@ export function initReposScreen({ onSelect }) {
   }
 
   return {
-    setRepos(repos, cloned) {
+    setRepos(repos, cloned, dirty) {
       all = repos;
       clonedMap = cloned || new Map();
+      dirtySet = dirty || new Set();
       render();
     },
     reset() {
       all = [];
       clonedMap = new Map();
+      dirtySet = new Set();
       filter.value = "";
       clear(list);
     },

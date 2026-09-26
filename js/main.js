@@ -401,6 +401,21 @@ async function goBack() {
   }
 }
 
+async function refreshRepoDirty() {
+  const { repos, clonedMap } = getState();
+  const clones = await storage.listClonedRepos();
+  const dirtySet = new Set();
+  for (const c of clones) {
+    const fullName = `${c.owner}/${c.name}`;
+    try {
+      const hasChanges = await storage.repoHasChanges(c.key);
+      if (hasChanges) dirtySet.add(fullName);
+    } catch {}
+  }
+  setState({ clonedDirty: dirtySet });
+  reposScreen.setRepos(repos, clonedMap, dirtySet);
+}
+
 async function exitRepo() {
   stopLocalWatch();
   await maybeAutoSave();
@@ -418,6 +433,8 @@ async function exitRepo() {
   clearRemoteChanges();
   setSelectionMode(false);
   setScreen(SCREENS.REPOS);
+  // Обновляем список — у текущего репо может теперь быть или не быть изменений.
+  refreshRepoDirty();
 }
 
 async function maybeAutoSave() {
@@ -484,12 +501,20 @@ async function loadAllRepos() {
   ]);
 
   const clonedMap = new Map();
+  const dirtySet = new Set();
   for (const c of clones) {
-    clonedMap.set(`${c.owner}/${c.name}`, c.totalBytes || 0);
+    const fullName = `${c.owner}/${c.name}`;
+    clonedMap.set(fullName, c.totalBytes || 0);
+    try {
+      const hasChanges = await storage.repoHasChanges(c.key);
+      if (hasChanges) dirtySet.add(fullName);
+    } catch (e) {
+      console.warn("repoHasChanges:", fullName, e.message);
+    }
   }
 
-  setState({ repos: list, clonedMap });
-  reposScreen.setRepos(list, clonedMap);
+  setState({ repos: list, clonedMap, clonedDirty: dirtySet });
+  reposScreen.setRepos(list, clonedMap, dirtySet);
 
   if (est) {
     setStatus(
@@ -3257,6 +3282,8 @@ async function commit(message) {
     commitScreen.close();
     renderFiles();
     setStatus(`Закоммичено: ${newHeadSha.slice(0, 7)}`);
+    // Если выйдем в список репо — статус уже обновится в exitRepo,
+    // но обновим и сейчас, на случай возврата через кнопку «Назад».
   } catch (e) {
     setStatus("Ошибка коммита: " + e.message, true);
   } finally {

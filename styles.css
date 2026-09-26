@@ -149,6 +149,10 @@ body {
 .list li.cloned .name { color: #6cc06c; }
 .list li.cloned .size { color: #6cc06c; opacity: 0.75; }
 
+/* Клонированный репо с незакоммиченными изменениями — жёлтое имя */
+.list li.cloned.dirty .name { color: #e2c08d; }
+.list li.cloned.dirty .size { color: #e2c08d; opacity: 0.75; }
+
 .entry .icon {
   flex-shrink: 0;
   display: inline-flex;
