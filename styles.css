@@ -149,7 +149,16 @@ body {
 .list li.cloned .name { color: #6cc06c; }
 .list li.cloned .size { color: #6cc06c; opacity: 0.75; }
 
-.entry .icon { flex-shrink: 0; }
+.entry .icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  font-size: 15px;
+  line-height: 1;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+}
 .entry .name {
   flex: 1;
   overflow: hidden;

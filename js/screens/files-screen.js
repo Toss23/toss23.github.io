@@ -2,6 +2,83 @@ import { $, el, clear, option } from "@core/dom.js";
 import { listDirectory } from "@core/tree.js";
 import { formatSize } from "@core/format.js";
 
+const FILE_ICONS = {
+  cs: "\uD83D\uDCA0",
+  csproj: "\uD83D\uDD37",
+  sln: "\uD83D\uDD37",
+  js: "\uD83D\uDFE1",
+  mjs: "\uD83D\uDFE1",
+  cjs: "\uD83D\uDFE1",
+  ts: "\uD83D\uDD35",
+  tsx: "\uD83D\uDD35",
+  jsx: "\uD83D\uDD35",
+  html: "\uD83C\uDF10",
+  htm: "\uD83C\uDF10",
+  xhtml: "\uD83C\uDF10",
+  css: "\uD83C\uDFA8",
+  scss: "\uD83C\uDFA8",
+  sass: "\uD83C\uDFA8",
+  less: "\uD83C\uDFA8",
+  json: "\uD83D\uDCCB",
+  md: "\uD83D\uDCD6",
+  markdown: "\uD83D\uDCD6",
+  yml: "\u2699\uFE0F",
+  yaml: "\u2699\uFE0F",
+  toml: "\u2699\uFE0F",
+  ini: "\u2699\uFE0F",
+  xml: "\uD83D\uDCF0",
+  png: "\uD83D\uDDBC\uFE0F",
+  jpg: "\uD83D\uDDBC\uFE0F",
+  jpeg: "\uD83D\uDDBC\uFE0F",
+  gif: "\uD83D\uDDBC\uFE0F",
+  webp: "\uD83D\uDDBC\uFE0F",
+  bmp: "\uD83D\uDDBC\uFE0F",
+  ico: "\uD83D\uDDBC\uFE0F",
+  svg: "\uD83D\uDDBC\uFE0F",
+  pdf: "\uD83D\uDCD5",
+  zip: "\uD83D\uDDDC\uFE0F",
+  tar: "\uD83D\uDDDC\uFE0F",
+  gz: "\uD83D\uDDDC\uFE0F",
+  rar: "\uD83D\uDDDC\uFE0F",
+  "7z": "\uD83D\uDDDC\uFE0F",
+  py: "\uD83D\uDC0D",
+  java: "\u2615",
+  kt: "\uD83C\uDFA1",
+  go: "\uD83D\uDC39",
+  rs: "\uD83E\uDD80",
+  rb: "\uD83D\uDC8E",
+  php: "\uD83D\uDC18",
+  cpp: "\u2699\uFE0F",
+  c: "\u2699\uFE0F",
+  h: "\u2699\uFE0F",
+  hpp: "\u2699\uFE0F",
+  sh: "\u2699\uFE0F",
+  bash: "\u2699\uFE0F",
+  zsh: "\u2699\uFE0F",
+  ps1: "\u2699\uFE0F",
+  bat: "\u2699\uFE0F",
+  cmd: "\u2699\uFE0F",
+  sql: "\uD83D\uDDC4\uFE0F",
+  txt: "\uD83D\uDCC4",
+  log: "\uD83D\uDCC4",
+  csv: "\uD83D\uDCCA",
+  tsv: "\uD83D\uDCCA",
+  env: "\uD83D\uDD10",
+};
+
+const FILE_ICON_DEFAULT = "\uD83D\uDCC4";
+
+function fileIcon(path) {
+  const name = (path.split("/").pop() || "").toLowerCase();
+  if (name === ".gitignore" || name === ".gitattributes" || name === ".gitmodules") return "\uD83D\uDD27";
+  if (name === "dockerfile") return "\uD83D\uDC33";
+  if (name === ".editorconfig") return "\u2699\uFE0F";
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return FILE_ICON_DEFAULT;
+  const ext = name.slice(dot + 1);
+  return FILE_ICONS[ext] || FILE_ICON_DEFAULT;
+}
+
 // Тач-устройство: не разрешаем HTML5 drag — на Android он конфликтует с long-press.
 const isTouchDevice = (() => {
   try {
@@ -362,7 +439,7 @@ export function initFilesScreen({
           if (selection?.has(f.path)) cb.checked = true;
           children.push(cb);
         }
-        children.push(el("span", { class: "icon", text: "📄" }));
+        children.push(el("span", { class: "icon", text: fileIcon(f.path) }));
         children.push(el("span", { class: "name", text: name }));
 
         const remoteKind = remoteMap.get(f.path);
