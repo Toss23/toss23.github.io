@@ -137,11 +137,6 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   }
 
   function insertAtTarget(text) {
-    // Одна буква при активном shift — после вставки возвращаем нижний регистр
-    // и перерисовываем клавиатуру, чтобы буквы стали строчными.
-    const isLetter = text.length === 1 && /[A-Za-zА-Яа-яЁё]/.test(text);
-    const willResetShift = shift && panel === "letters" && isLetter;
-
     const el = getTarget();
     if (el === textarea) {
       editorScreen.insertAtCursor?.(text);
@@ -153,7 +148,10 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
       el.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
-    if (willResetShift) {
+    // Одноразовый Shift: после любого одиночного ввода на панели «letters»
+    // возвращаем нижний регистр и перерисовываем клавиатуру,
+    // чтобы буквы снова стали строчными.
+    if (shift && panel === "letters" && typeof text === "string" && text.length > 0) {
       shift = false;
       render();
     }
