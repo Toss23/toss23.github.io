@@ -2,7 +2,11 @@ import { $ } from "@core/dom.js";
 import { UI } from "@core/config.js";
 import { gitBlobSha } from "@core/git-sha.js";
 import { fromLf } from "@core/encoding.js";
-import { tokenize, renderTokens } from "@core/csharp-highlight.js";
+import { tokenize, renderTokens, findBracketPair } from "@core/csharp-highlight.js";
+
+const OPEN_TO_CLOSE = { "(": ")", "[": "]", "{": "}", "\"": "\"", "'": "'" };
+const CLOSE_CHARS = new Set([")", "]", "}", "\"", "'"]);
+const INDENT_SIZE = 4;
 
 export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   const textarea = $("file-content");
@@ -21,13 +25,18 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   let savedLf = null;
   let checkTimer;
   let highlightTimer;
+  let caretTimer;
+
+  /* ---------- Подсветка ---------- */
 
   function renderHighlight() {
     if (!codeEl || !textarea) return;
     const text = textarea.value;
     try {
       const tokens = tokenize(text);
-      codeEl.innerHTML = renderTokens(tokens);
+      const pos = textarea.selectionStart || 0;
+      const pair = findBracketPair(text, pos);
+      codeEl.innerHTML = renderTokens(tokens, pair);
     } catch (e) {
       console.warn("highlight:", e);
       codeEl.textContent = text;
@@ -43,6 +52,178 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     highlightTimer = setTimeout(renderHighlight, 120);
   }
 
+  function scheduleCaretHighlight() {
+    clearTimeout(caretTimer);
+    caretTimer = setTimeout(renderHighlight, 40);
+  }
+
+  /* ---------- Вставка ---------- */
+
+  function insertText(text, selectStart, selectEnd) {
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    textarea.setRangeText(text, start, end, "end");
+    if (typeof selectStart === "number") {
+      const s = start + selectStart;
+      const e = typeof selectEnd === "number" ? start + selectEnd : s;
+      textarea.setSelectionRange(s, e);
+    }
+    scheduleHighlight();
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(check, 200);
+  }
+
+  function currentLineInfo() {
+    if (!textarea) return { indent: "", beforeCaret: "", afterCaret: "" };
+    const text = textarea.value;
+    const pos = textarea.selectionStart;
+    const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
+    const lineEnd = text.indexOf("\n", pos);
+    const lineEndPos = lineEnd === -1 ? text.length : lineEnd;
+    const beforeCaret = text.slice(lineStart, pos);
+    const afterCaret = text.slice(pos, lineEndPos);
+    const m = beforeCaret.match(/^[ \t]*/);
+    const indent = m ? m[0] : "";
+    return { indent, beforeCaret, afterCaret, lineStart, lineEndPos };
+  }
+
+  /* ---------- Обработка клавиш ---------- */
+
+  function handleKeydown(e) {
+    if (!textarea || textarea.disabled || !base) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    // Enter — автоотступ / автозакрытие блока
+    if (e.key === "Enter" && !e.shiftKey) {
+      const { indent, beforeCaret, afterCaret } = currentLineInfo();
+      const trimmedEnd = beforeCaret.replace(/[ \t]+$/, "");
+
+      if (trimmedEnd.endsWith("{")) {
+        e.preventDefault();
+        const nextIndent = indent + " ".repeat(INDENT_SIZE);
+        const trimmedAfter = afterCaret.replace(/^[ \t]*/, "");
+        if (trimmedAfter.startsWith("}")) {
+          const insertion = "\n" + nextIndent + "\n" + indent;
+          insertText(insertion, 1 + nextIndent.length, 1 + nextIndent.length);
+        } else {
+          const insertion = "\n" + nextIndent;
+          insertText(insertion);
+        }
+        return;
+      }
+
+      const trimmedAfter = afterCaret.replace(/^[ \t]*/, "");
+      if (trimmedAfter.startsWith("}")) {
+        e.preventDefault();
+        let baseIndent = indent;
+        if (baseIndent.length >= INDENT_SIZE) baseIndent = baseIndent.slice(0, -INDENT_SIZE);
+        const insertion = "\n" + baseIndent;
+        insertText(insertion);
+        return;
+      }
+
+      if (indent) {
+        e.preventDefault();
+        const insertion = "\n" + indent;
+        insertText(insertion);
+        return;
+      }
+      return;
+    }
+
+    // Автозакрытие скобок
+    if (OPEN_TO_CLOSE[e.key]) {
+      const text = textarea.value;
+      const pos = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+
+      const isQuote = e.key === "\"" || e.key === "'";
+      if (isQuote) {
+        const prevCh = pos > 0 ? text[pos - 1] : "";
+        const nextCh = pos < text.length ? text[pos] : "";
+        if (prevCh === "\\") return;
+        if (nextCh === e.key && pos === end) {
+          e.preventDefault();
+          textarea.setSelectionRange(pos + 1, pos + 1);
+          scheduleCaretHighlight();
+          return;
+        }
+        if (/[A-Za-z0-9_]/.test(prevCh)) return;
+      } else {
+        const nextCh = pos < text.length ? text[pos] : "";
+        if (CLOSE_CHARS.has(nextCh) && pos === end) {
+          e.preventDefault();
+          textarea.setRangeText(e.key + nextCh, pos, pos + 1, "end");
+          textarea.setSelectionRange(pos + 1, pos + 1);
+          scheduleHighlight();
+          clearTimeout(checkTimer);
+          checkTimer = setTimeout(check, 200);
+          return;
+        }
+      }
+
+      e.preventDefault();
+      const close = OPEN_TO_CLOSE[e.key];
+      const selected = textarea.value.slice(pos, end);
+      insertText(e.key + selected + close, 1, 1 + selected.length);
+      return;
+    }
+
+    // Прыжок через закрывающую
+    if (CLOSE_CHARS.has(e.key)) {
+      const text = textarea.value;
+      const pos = textarea.selectionStart;
+      if (pos === textarea.selectionEnd && text[pos] === e.key) {
+        e.preventDefault();
+        textarea.setSelectionRange(pos + 1, pos + 1);
+        scheduleCaretHighlight();
+        return;
+      }
+    }
+
+    // Backspace внутри пустой пары — удалить обе скобки
+    if (e.key === "Backspace") {
+      const text = textarea.value;
+      const pos = textarea.selectionStart;
+      if (pos === textarea.selectionEnd && pos > 0 && pos < text.length) {
+        const leftCh = text[pos - 1];
+        const rightCh = text[pos];
+        if (OPEN_TO_CLOSE[leftCh] && OPEN_TO_CLOSE[leftCh] === rightCh) {
+          e.preventDefault();
+          textarea.setRangeText("", pos - 1, pos + 1, "end");
+          scheduleHighlight();
+          clearTimeout(checkTimer);
+          checkTimer = setTimeout(check, 200);
+          return;
+        }
+      }
+    }
+
+    // Автоотступ для одиночной закрывающей скобки в начале строки
+    if (e.key === "}") {
+      const text = textarea.value;
+      const pos = textarea.selectionStart;
+      const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
+      const before = text.slice(lineStart, pos);
+      if (/^[ \t]+$/.test(before)) {
+        e.preventDefault();
+        let baseIndent = before;
+        if (baseIndent.length >= INDENT_SIZE) baseIndent = baseIndent.slice(0, -INDENT_SIZE);
+        const insertion = baseIndent + "}";
+        textarea.setRangeText(insertion, lineStart, pos, "end");
+        scheduleHighlight();
+        clearTimeout(checkTimer);
+        checkTimer = setTimeout(check, 200);
+        return;
+      }
+    }
+  }
+
+  /* ---------- Обработчики ---------- */
+
+  textarea.addEventListener("keydown", handleKeydown);
+
   textarea.addEventListener("input", () => {
     scheduleHighlight();
     clearTimeout(checkTimer);
@@ -53,6 +234,12 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     if (!highlight) return;
     highlight.scrollTop = textarea.scrollTop;
     highlight.scrollLeft = textarea.scrollLeft;
+  });
+
+  textarea.addEventListener("keyup", scheduleCaretHighlight);
+  textarea.addEventListener("click", scheduleCaretHighlight);
+  document.addEventListener("selectionchange", () => {
+    if (document.activeElement === textarea) scheduleCaretHighlight();
   });
 
   saveBtn.addEventListener("click", () => {
@@ -89,13 +276,14 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   }
 
   return {
-    open({ path, baseSha, eol, content }) {
+    open({ path, baseSha, eol, content, focus = false }) {
       base = { path, baseSha, baseEol: eol };
       savedLf = content;
       if (pathLabel) pathLabel.textContent = path;
       setContent(content, false);
       clearTimeout(checkTimer);
       check();
+      if (focus) setTimeout(() => textarea.focus(), 50);
     },
     close() {
       base = null;
@@ -108,6 +296,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       revertBtn.disabled = true;
       clearTimeout(checkTimer);
       clearTimeout(highlightTimer);
+      clearTimeout(caretTimer);
     },
     markSaved(path) {
       if (!base || !textarea) return;
@@ -128,9 +317,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       check();
     },
     setLocalMode(visible) {
-      // Сохранить — только в local-режиме (пишет в IndexedDB).
       saveBtn.classList.toggle("hidden", !visible);
-      // Откатить — всегда доступно (и local, и remote).
       revertBtn.classList.remove("hidden");
     },
     showBinaryNotice(path, sizeText) {
@@ -143,6 +330,9 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       saveBtn.classList.remove("active");
       revertBtn.disabled = true;
     },
+    getPath() {
+      return base ? base.path : null;
+    },
     getContent() {
       return textarea ? textarea.value : "";
     },
@@ -152,8 +342,6 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       scheduleHighlight();
       clearTimeout(checkTimer);
       checkTimer = setTimeout(check, 200);
-      const evt = new Event("input", { bubbles: true });
-      textarea.dispatchEvent(evt);
     },
     selectRange(start, end) {
       if (!textarea) return;

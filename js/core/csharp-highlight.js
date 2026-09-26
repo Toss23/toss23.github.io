@@ -25,6 +25,9 @@ const TYPE_AFTER = new Set([
   "out","ref","stackalloc"
 ]);
 
+const BRACKET_OPEN = { "(": ")", "[": "]", "{": "}" };
+const BRACKET_CLOSE = { ")": "(", "]": "[", "}": "{" };
+
 function isIdentStart(c) {
   return (c >= "A" && c <= "Z") || (c >= "a" && c <= "z") || c === "_" || c === "@";
 }
@@ -50,22 +53,23 @@ export function tokenize(code) {
   let i = 0;
   let atLineStart = true;
 
-  function push(type, text) { if (text) tokens.push({ type, text }); }
+  function push(type, text, pos) { if (text) tokens.push({ type, text, pos }); }
 
   while (i < n) {
     const c = code[i];
-    if (c === "\n") { push("ws", "\n"); i++; atLineStart = true; continue; }
+    const startPos = i;
+    if (c === "\n") { push("ws", "\n", startPos); i++; atLineStart = true; continue; }
     if (c === " " || c === "\t" || c === "\r") {
       let j = i;
       while (j < n && (code[j] === " " || code[j] === "\t" || code[j] === "\r")) j++;
-      push("ws", code.slice(i, j));
+      push("ws", code.slice(i, j), startPos);
       i = j;
       continue;
     }
     if (c === "#" && atLineStart) {
       let j = i;
       while (j < n && code[j] !== "\n") j++;
-      push("preprocessor", code.slice(i, j));
+      push("preprocessor", code.slice(i, j), startPos);
       i = j;
       atLineStart = false;
       continue;
@@ -75,7 +79,7 @@ export function tokenize(code) {
     if (c === "/" && code[i+1] === "/") {
       let j = i;
       while (j < n && code[j] !== "\n") j++;
-      push("comment", code.slice(i, j));
+      push("comment", code.slice(i, j), startPos);
       i = j;
       continue;
     }
@@ -83,7 +87,7 @@ export function tokenize(code) {
       let j = i + 2;
       while (j < n && !(code[j] === "*" && code[j+1] === "/")) j++;
       if (j < n) j += 2;
-      push("comment", code.slice(i, j));
+      push("comment", code.slice(i, j), startPos);
       i = j;
       continue;
     }
@@ -95,7 +99,7 @@ export function tokenize(code) {
         else if (code[j] === "\"") { j++; break; }
         else j++;
       }
-      push("string", code.slice(i, j));
+      push("string", code.slice(i, j), startPos);
       i = j;
       continue;
     }
@@ -106,7 +110,7 @@ export function tokenize(code) {
         else if (code[j] === "\"") { j++; break; }
         else j++;
       }
-      push("string", code.slice(i, j));
+      push("string", code.slice(i, j), startPos);
       i = j;
       continue;
     }
@@ -119,7 +123,7 @@ export function tokenize(code) {
         else if (code[j] === "\"" && depth === 0) { j++; break; }
         j++;
       }
-      push("string", code.slice(i, j));
+      push("string", code.slice(i, j), startPos);
       i = j;
       continue;
     }
@@ -130,7 +134,7 @@ export function tokenize(code) {
         if (code[j] === "\"") { j++; break; }
         j++;
       }
-      push("string", code.slice(i, j));
+      push("string", code.slice(i, j), startPos);
       i = j;
       continue;
     }
@@ -141,7 +145,7 @@ export function tokenize(code) {
         if (code[j] === "'") { j++; break; }
         j++;
       }
-      push("char", code.slice(i, j));
+      push("char", code.slice(i, j), startPos);
       i = j;
       continue;
     }
@@ -164,7 +168,7 @@ export function tokenize(code) {
         }
       }
       while (j < n && /[fFdDmMuUlL]/.test(code[j])) j++;
-      push("number", code.slice(i, j));
+      push("number", code.slice(i, j), startPos);
       i = j;
       continue;
     }
@@ -177,7 +181,7 @@ export function tokenize(code) {
       const bare = c === "@" ? word.slice(1) : word;
       let type = "ident";
       if (KEYWORDS.has(bare)) type = "keyword";
-      push(type, word);
+      push(type, word, startPos);
       i = j;
       continue;
     }
@@ -189,11 +193,11 @@ export function tokenize(code) {
     else if (["==", "!=", "<=", ">=", "&&", "||", "++", "--", "+=", "-=",
               "*=", "/=", "%=", "=>", "?.", "??", "<<", ">>", "::",
               "->", "&=", "|=", "^="].includes(two)) op = two;
-    push("op", op);
+    push("op", op, startPos);
     i += op.length;
   }
 
-  // ===== Проход 1: атрибуты =====
+  // Проход 1: атрибуты
   for (let k = 0; k < tokens.length; k++) {
     const t = tokens[k];
     if (t.type !== "op" || t.text !== "[") continue;
@@ -230,7 +234,7 @@ export function tokenize(code) {
     }
   }
 
-  // ===== Проход 2: методы, типы, интерфейсы =====
+  // Проход 2: методы, типы, интерфейсы
   for (let k = 0; k < tokens.length; k++) {
     const t = tokens[k];
     if (t.type !== "ident") continue;
@@ -240,7 +244,6 @@ export function tokenize(code) {
     while (nx < tokens.length && (tokens[nx].type === "ws" || tokens[nx].type === "comment")) nx++;
     const prev = p >= 0 ? tokens[p] : null;
     const next = nx < tokens.length ? tokens[nx] : null;
-
     if (next && next.text === "(") { t.type = "method"; continue; }
     if (prev && prev.type === "op" && prev.text === ".") continue;
     if (prev && prev.type === "keyword" && TYPE_AFTER.has(prev.text)) {
@@ -252,7 +255,7 @@ export function tokenize(code) {
     if (/^[A-Z][A-Za-z0-9_]*$/.test(t.text)) { t.type = "type"; continue; }
   }
 
-  // ===== Проход 3: аргументы методов =====
+  // Проход 3: аргументы
   for (let k = 0; k < tokens.length; k++) {
     const t = tokens[k];
     if (t.type !== "method") continue;
@@ -275,7 +278,6 @@ export function tokenize(code) {
     const isDeclaration = afterTok && afterTok.type === "op" &&
       (afterTok.text === "{" || afterTok.text === "=>");
     if (!isDeclaration) continue;
-
     let angle = 0;
     for (let x = i + 1; x < j; x++) {
       const tk = tokens[x];
@@ -289,10 +291,8 @@ export function tokenize(code) {
     }
   }
 
-  // ===== Проход 4: сбор имён членов класса =====
+  // Проход 4-5: члены класса
   const memberMap = collectClassMembers(tokens);
-
-  // ===== Проход 5: применение имён по всему файлу =====
   applyClassMembers(tokens, memberMap);
 
   return tokens;
@@ -331,14 +331,11 @@ function collectClassMembers(tokens) {
   const classBodyDepth = findClassBodyDepth(tokens);
   if (classBodyDepth < 0) return map;
   const depths = computeDepths(tokens);
-
   const stmtIdxs = [];
   for (let k = 0; k < tokens.length; k++) {
     const t = tokens[k];
     const d = depths[k];
-
     if (d !== classBodyDepth) continue;
-
     if (t.type === "op" && t.text === "{") {
       if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0), map);
       let inner = 1;
@@ -351,17 +348,10 @@ function collectClassMembers(tokens) {
       k = j - 1;
       continue;
     }
-
-    if (t.type === "op" && t.text === ";") {
+    if (t.type === "op" && (t.text === ";" || t.text === "}")) {
       if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0), map);
       continue;
     }
-
-    if (t.type === "op" && t.text === "}") {
-      if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs.splice(0), map);
-      continue;
-    }
-
     stmtIdxs.push(k);
   }
   if (stmtIdxs.length > 0) processClassMember(tokens, stmtIdxs, map);
@@ -370,7 +360,6 @@ function collectClassMembers(tokens) {
 
 function processClassMember(tokens, idxs, map) {
   if (idxs.length === 0) return;
-
   let cutAt = idxs.length;
   let paren = 0, angle = 0, bracket = 0;
   for (let p = 0; p < idxs.length; p++) {
@@ -378,10 +367,7 @@ function processClassMember(tokens, idxs, map) {
     const t = tokens[k];
     if (t.type === "op") {
       if (paren === 0 && angle === 0 && bracket === 0) {
-        if (t.text === "(" || t.text === "=>" || t.text === "=") {
-          cutAt = p;
-          break;
-        }
+        if (t.text === "(" || t.text === "=>" || t.text === "=") { cutAt = p; break; }
       }
       if (t.text === "(") paren++;
       else if (t.text === ")") paren--;
@@ -390,11 +376,9 @@ function processClassMember(tokens, idxs, map) {
       else if (t.text === "[") bracket++;
       else if (t.text === "]") bracket--;
     } else if (t.type === "keyword" && t.text === "where" && paren === 0 && angle === 0 && bracket === 0) {
-      cutAt = p;
-      break;
+      cutAt = p; break;
     }
   }
-
   const decl = [];
   for (let p = 0; p < cutAt; p++) {
     const k = idxs[p];
@@ -403,17 +387,12 @@ function processClassMember(tokens, idxs, map) {
     decl.push(k);
   }
   if (decl.length === 0) return;
-
   let nameIdx = -1;
   for (let p = decl.length - 1; p >= 0; p--) {
     const k = decl[p];
-    if (tokens[k].type === "ident" || tokens[k].type === "type") {
-      nameIdx = k;
-      break;
-    }
+    if (tokens[k].type === "ident" || tokens[k].type === "type") { nameIdx = k; break; }
   }
   if (nameIdx < 0) return;
-
   let hasTypeBefore = false;
   for (const k of decl) {
     if (k >= nameIdx) break;
@@ -424,16 +403,11 @@ function processClassMember(tokens, idxs, map) {
     break;
   }
   if (!hasTypeBefore) return;
-
   let hasEvent = false;
   for (const k of decl) {
     if (k >= nameIdx) break;
-    if (tokens[k].type === "keyword" && tokens[k].text === "event") {
-      hasEvent = true;
-      break;
-    }
+    if (tokens[k].type === "keyword" && tokens[k].text === "event") { hasEvent = true; break; }
   }
-
   const name = tokens[nameIdx].text;
   if (hasEvent) map.set(name, "event");
   else if (/^_/.test(name) || /^[a-z]/.test(name)) map.set(name, "field");
@@ -447,64 +421,143 @@ function applyClassMembers(tokens, memberMap) {
     "new","typeof","is","as","event","class","struct","interface",
     "enum","delegate","where"
   ]);
-
   for (let k = 0; k < n; k++) {
     const t = tokens[k];
     if (t.type !== "ident" && t.type !== "type") continue;
     if (!memberMap.has(t.text)) continue;
-
-    // Предыдущий значимый токен
     let p = k - 1;
     while (p >= 0 && (tokens[p].type === "ws" || tokens[p].type === "comment")) p--;
     const prev = p >= 0 ? tokens[p] : null;
-
-    // После точки — свойство чужого объекта, не наше.
     if (prev && prev.type === "op" && prev.text === ".") continue;
-
-    // После модификатора или в контексте типа — это объявление типа, не значение.
     if (prev && prev.type === "keyword") {
       if (MODIFIERS.has(prev.text)) continue;
       if (TYPE_CTX.has(prev.text)) continue;
     }
-
-    // Следующий значимый токен
     let nx = k + 1;
     while (nx < n && (tokens[nx].type === "ws" || tokens[nx].type === "comment")) nx++;
     const next = nx < n ? tokens[nx] : null;
-
-    // Вызов метода или объявление метода — не наше.
     if (next && next.type === "op" && next.text === "(") continue;
-
-    // Следующий — идентификатор/тип, значит мы сами тип в объявлении `Type Name`.
     if (next && (next.type === "ident" || next.type === "type")) continue;
-
     t.type = memberMap.get(t.text);
   }
 }
 
-export function renderTokens(tokens) {
+/**
+ * Находит парную скобку для символа на позиции pos.
+ * Возвращает пару [openPos, closePos] или null.
+ */
+export function findBracketPair(text, pos) {
+  if (!text || pos < 0 || pos > text.length) return null;
+
+  const left = pos - 1;
+  const right = pos;
+
+  function matchFromOpen(openIdx) {
+    const openCh = text[openIdx];
+    const closeCh = BRACKET_OPEN[openCh];
+    if (!closeCh) return null;
+    let depth = 0;
+    for (let i = openIdx; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === openCh) depth++;
+      else if (ch === closeCh) {
+        depth--;
+        if (depth === 0) return [openIdx, i];
+      }
+    }
+    return null;
+  }
+
+  function matchFromClose(closeIdx) {
+    const closeCh = text[closeIdx];
+    const openCh = BRACKET_CLOSE[closeCh];
+    if (!openCh) return null;
+    let depth = 0;
+    for (let i = closeIdx; i >= 0; i--) {
+      const ch = text[i];
+      if (ch === closeCh) depth++;
+      else if (ch === openCh) {
+        depth--;
+        if (depth === 0) return [i, closeIdx];
+      }
+    }
+    return null;
+  }
+
+  if (right < text.length) {
+    const ch = text[right];
+    if (BRACKET_OPEN[ch]) {
+      const pair = matchFromOpen(right);
+      if (pair) return pair;
+    }
+    if (BRACKET_CLOSE[ch]) {
+      const pair = matchFromClose(right);
+      if (pair) return pair;
+    }
+  }
+
+  if (left >= 0) {
+    const ch = text[left];
+    if (BRACKET_OPEN[ch]) {
+      const pair = matchFromOpen(left);
+      if (pair) return pair;
+    }
+    if (BRACKET_CLOSE[ch]) {
+      const pair = matchFromClose(left);
+      if (pair) return pair;
+    }
+  }
+
+  return null;
+}
+
+export function renderTokens(tokens, bracketPair) {
   let out = "";
+  const highlightSet = bracketPair ? new Set(bracketPair) : null;
+
+  function emit(text, cls, pos) {
+    if (!text) return;
+    if (highlightSet && pos !== undefined && text.length === 1 && highlightSet.has(pos)) {
+      const baseCls = cls ? cls + " " : "";
+      out += '<span class="' + baseCls + 'tok-bracket-match">' + text + "</span>";
+    } else if (cls) {
+      out += '<span class="' + cls + '">' + text + "</span>";
+    } else {
+      out += text;
+    }
+  }
+
   for (const t of tokens) {
     const text = escapeHtml(t.text);
-    switch (t.type) {
-      case "ws": out += text; break;
-      case "keyword": out += '<span class="tok-keyword">' + text + "</span>"; break;
-      case "control": out += '<span class="tok-control">' + text + "</span>"; break;
-      case "type": out += '<span class="tok-type">' + text + "</span>"; break;
-      case "interface": out += '<span class="tok-interface">' + text + "</span>"; break;
-      case "attribute": out += '<span class="tok-attribute">' + text + "</span>"; break;
-      case "method": out += '<span class="tok-method">' + text + "</span>"; break;
-      case "arg": out += '<span class="tok-arg">' + text + "</span>"; break;
-      case "field": out += '<span class="tok-field">' + text + "</span>"; break;
-      case "property": out += '<span class="tok-property">' + text + "</span>"; break;
-      case "event": out += '<span class="tok-event">' + text + "</span>"; break;
-      case "string": out += '<span class="tok-string">' + text + "</span>"; break;
-      case "char": out += '<span class="tok-char">' + text + "</span>"; break;
-      case "comment": out += '<span class="tok-comment">' + text + "</span>"; break;
-      case "number": out += '<span class="tok-number">' + text + "</span>"; break;
-      case "preprocessor": out += '<span class="tok-preprocessor">' + text + "</span>"; break;
-      case "op": out += '<span class="tok-op">' + text + "</span>"; break;
-      default: out += text;
+    const cls = (() => {
+      switch (t.type) {
+        case "keyword": return "tok-keyword";
+        case "control": return "tok-control";
+        case "type": return "tok-type";
+        case "interface": return "tok-interface";
+        case "attribute": return "tok-attribute";
+        case "method": return "tok-method";
+        case "arg": return "tok-arg";
+        case "field": return "tok-field";
+        case "property": return "tok-property";
+        case "event": return "tok-event";
+        case "string": return "tok-string";
+        case "char": return "tok-char";
+        case "comment": return "tok-comment";
+        case "number": return "tok-number";
+        case "preprocessor": return "tok-preprocessor";
+        case "op": return "tok-op";
+        default: return null;
+      }
+    })();
+
+    if (highlightSet && t.pos !== undefined && text.length === 1 && highlightSet.has(t.pos)) {
+      const baseCls = cls ? cls + " " : "";
+      out += '<span class="' + baseCls + 'tok-bracket-match">' + text + "</span>";
+    } else if (cls) {
+      out += '<span class="' + cls + '">' + text + "</span>";
+    } else {
+      out += text;
     }
   }
   return out;

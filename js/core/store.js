@@ -20,6 +20,8 @@ const state = {
   cloned: null,
   baseHeadSha: null,         // HEAD ветки в remote-режиме (для проверки базы)
   screen: "auth",
+  openTabs: [],
+  activeTab: null,
   selectionMode: false,      // режим выбора для удаления
   selection: new Set(),      // выбранные пути
   remoteChanges: new Map(),  // path -> "modified" | "added" | "removed" | "renamed"
@@ -79,6 +81,33 @@ export function setSelectionMode(on) {
 export function toggleSelection(path) {
   if (state.selection.has(path)) state.selection.delete(path);
   else state.selection.add(path);
+  notify();
+}
+
+export function addTab(tab) {
+  if (!state.openTabs.some((t) => t.path === tab.path)) {
+    state.openTabs.push(tab);
+  }
+  state.activeTab = tab.path;
+  notify();
+}
+
+export function removeTab(path) {
+  state.openTabs = state.openTabs.filter((t) => t.path !== path);
+  if (state.activeTab === path) {
+    state.activeTab = state.openTabs.length ? state.openTabs[state.openTabs.length - 1].path : null;
+  }
+  notify();
+}
+
+export function setActiveTab(path) {
+  state.activeTab = path;
+  notify();
+}
+
+export function clearTabs() {
+  state.openTabs = [];
+  state.activeTab = null;
   notify();
 }
 
