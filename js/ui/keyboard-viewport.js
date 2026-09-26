@@ -20,18 +20,17 @@ export function initKeyboardViewport() {
     });
     for (const t of timeouts) clearTimeout(t);
     timeouts = [
-      setTimeout(apply, 50),
-      setTimeout(apply, 150),
-      setTimeout(apply, 400),
+      setTimeout(apply, 60),
+      setTimeout(apply, 180),
+      setTimeout(apply, 500),
     ];
   }
 
   vv.addEventListener("resize", updateSoon);
   vv.addEventListener("scroll", updateSoon);
   window.addEventListener("orientationchange", () => setTimeout(updateSoon, 200));
-
   document.addEventListener("focusin", updateSoon, true);
-  document.addEventListener("focusout", () => setTimeout(updateSoon, 80), true);
+  document.addEventListener("focusout", () => setTimeout(updateSoon, 120), true);
   window.addEventListener("resize", updateSoon);
 
   apply();

@@ -5,24 +5,25 @@
 
 html, body {
   margin: 0;
-  height: var(--app-height, 100dvh);
   font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
   background: #1e1e1e;
   color: #ddd;
   overscroll-behavior: none;
 }
 
-html { height: 100%; overflow: hidden; }
-
-body {
-  height: var(--app-height, 100dvh);
-  transform: translateY(var(--app-top, 0));
+html {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
+  position: fixed;
+  top: var(--app-top, 0);
+  left: 0;
+  right: 0;
+  height: var(--app-height, 100dvh);
   display: flex;
   flex-direction: column;
-  height: 100dvh;
   overflow: hidden;
   isolation: isolate;
 }
@@ -495,7 +496,6 @@ body {
   display: flex;
   gap: 2px;
   padding: 4px 6px;
-  padding-bottom: calc(4px + env(safe-area-inset-bottom));
   background: #2d2d2d;
   border-top: 1px solid #333;
   overflow-x: auto;
@@ -665,6 +665,7 @@ body {
   display: flex;
   gap: 4px;
   padding: 6px 8px;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom));
   background: #252526;
   border-top: 1px solid #333;
   flex-shrink: 0;
@@ -1590,7 +1591,6 @@ body {
    ============================================================ */
 #status {
   padding: 6px 12px;
-  padding-bottom: calc(6px + env(safe-area-inset-bottom));
   background: #252526;
   border-top: 1px solid #333;
   font-size: 12px;
