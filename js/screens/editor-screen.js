@@ -2,7 +2,11 @@ import { $ } from "@core/dom.js";
 import { UI } from "@core/config.js";
 import { gitBlobSha } from "@core/git-sha.js";
 import { fromLf } from "@core/encoding.js";
-import { tokenize, renderTokens, findBracketPair } from "@core/csharp-highlight.js";
+import { tokenize, renderTokens, renderPlain, findBracketPair } from "@core/csharp-highlight.js";
+
+function isCSharpPath(path) {
+  return typeof path === "string" && /\.cs$/i.test(path);
+}
 
 const OPEN_TO_CLOSE = { "(": ")", "[": "]", "{": "}", "\"": "\"", "'": "'" };
 const CLOSE_CHARS = new Set([")", "]", "}", "\"", "'"]);
@@ -32,15 +36,23 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   function renderHighlight() {
     if (!codeEl || !textarea) return;
     const text = textarea.value;
+    const pos = textarea.selectionStart || 0;
+    const pair = findBracketPair(text, pos);
+    const path = base ? base.path : "";
+
     try {
-      const tokens = tokenize(text);
-      const pos = textarea.selectionStart || 0;
-      const pair = findBracketPair(text, pos);
-      codeEl.innerHTML = renderTokens(tokens, pair);
+      if (isCSharpPath(path)) {
+        const tokens = tokenize(text);
+        codeEl.innerHTML = renderTokens(tokens, pair);
+      } else {
+        // Не C# — только plain text + подсветка парных скобок.
+        codeEl.innerHTML = renderPlain(text, pair);
+      }
     } catch (e) {
       console.warn("highlight:", e);
       codeEl.textContent = text;
     }
+
     if (highlight) {
       highlight.scrollTop = textarea.scrollTop;
       highlight.scrollLeft = textarea.scrollLeft;

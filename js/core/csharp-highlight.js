@@ -511,6 +511,23 @@ export function findBracketPair(text, pos) {
   return null;
 }
 
+export function renderPlain(text, bracketPair) {
+  const safe = text == null ? "" : String(text);
+  if (!bracketPair) return escapeHtml(safe);
+  const a = bracketPair[0];
+  const b = bracketPair[1];
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  if (lo < 0 || hi >= safe.length || lo === hi) return escapeHtml(safe);
+  return (
+    escapeHtml(safe.slice(0, lo)) +
+    '<span class="tok-bracket-match">' + escapeHtml(safe[lo]) + "</span>" +
+    escapeHtml(safe.slice(lo + 1, hi)) +
+    '<span class="tok-bracket-match">' + escapeHtml(safe[hi]) + "</span>" +
+    escapeHtml(safe.slice(hi + 1))
+  );
+}
+
 export function renderTokens(tokens, bracketPair) {
   let out = "";
   const highlightSet = bracketPair ? new Set(bracketPair) : null;
