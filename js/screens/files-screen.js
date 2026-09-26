@@ -3,7 +3,7 @@ import { listDirectory } from "@core/tree.js";
 import { formatSize } from "@core/format.js";
 
 const FILE_ICONS = {
-  cs: "\uD83D\uDCA0",
+  cs: "#\uFE0F\u20E3",
   csproj: "\uD83D\uDD37",
   sln: "\uD83D\uDD37",
   js: "\uD83D\uDFE1",
