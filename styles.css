@@ -258,17 +258,26 @@ body {
    ============================================================ */
 .editor-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 12px;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 6px 8px;
   background: #252526;
   border-bottom: 1px solid #333;
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.editor-toolbar::-webkit-scrollbar { display: none; }
 .editor-toolbar .icon-btn {
   font-size: 12.5px;
   padding: 6px 10px;
   min-height: 34px;
+}
+.editor-toolbar .icon-btn.icon-only {
+  padding: 4px 8px;
+  font-size: 16px;
+  min-width: 36px;
+  min-height: 36px;
 }
 
 .editor-find-panel {
@@ -467,18 +476,22 @@ body {
    Полоса кнопок над клавиатурой (только тач)
    ============================================================ */
 .editor-keybar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
   display: flex;
   gap: 2px;
   padding: 4px 6px;
-  padding-bottom: calc(4px + env(safe-area-inset-bottom));
   background: #2d2d2d;
   border-top: 1px solid #333;
   overflow-x: auto;
   overflow-y: hidden;
-  flex-shrink: 0;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   white-space: nowrap;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.4);
 }
 .editor-keybar::-webkit-scrollbar { display: none; }
 .editor-keybar button {

@@ -13,14 +13,6 @@ const BUTTONS = [
   { label: "⇤", title: "Убрать отступ", action: "unindent" },
   { label: "↶", title: "Отменить", action: "undo" },
   { label: "↷", title: "Повторить", action: "redo" },
-  { label: "(", key: "(" },
-  { label: ")", key: ")" },
-  { label: "{", key: "{" },
-  { label: "}", key: "}" },
-  { label: "[", key: "[" },
-  { label: "]", key: "]" },
-  { label: "<", key: "<" },
-  { label: ">", key: ">" },
   { label: "\"", key: "\"" },
   { label: "'", key: "'" },
   { label: ";", key: ";" },
@@ -41,6 +33,7 @@ const BUTTONS = [
 export function initEditorKeybar({ editorScreen }) {
   const bar = $("editor-keybar");
   const textarea = $("file-content");
+  const statusEl = $("status");
   if (!bar || !textarea) return { show() {}, hide() {} };
 
   if (!isTouchDevice) return { show() {}, hide() {} };
@@ -88,10 +81,12 @@ export function initEditorKeybar({ editorScreen }) {
 
   function show() {
     bar.classList.remove("hidden");
+    if (statusEl) statusEl.classList.add("hidden");
   }
 
   function hide() {
     bar.classList.add("hidden");
+    if (statusEl) statusEl.classList.remove("hidden");
   }
 
   textarea.addEventListener("focus", show);
@@ -100,6 +95,23 @@ export function initEditorKeybar({ editorScreen }) {
       if (document.activeElement !== textarea) hide();
     }, 100);
   });
+
+  // Обновление позиции при появлении/исчезновении клавиатуры
+  const vv = window.visualViewport;
+  if (vv) {
+    const reposition = () => {
+      // При position: fixed браузер уже учитывает visualViewport,
+      // но на Android иногда нужно пересчитать padding под home indicator.
+      const safe = window.innerHeight - (vv.offsetTop + vv.height);
+      if (safe > 0 && !bar.classList.contains("hidden")) {
+        bar.style.paddingBottom = "4px";
+      } else {
+        bar.style.paddingBottom = "";
+      }
+    };
+    vv.addEventListener("resize", reposition);
+    vv.addEventListener("scroll", reposition);
+  }
 
   return { show, hide };
 }

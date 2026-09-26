@@ -108,13 +108,13 @@
     <div id="editor-tabs" class="editor-tabs"></div>
 
     <div class="editor-toolbar">
-      <button id="btn-editor-undo" class="icon-btn" title="Отменить (Ctrl+Z)" disabled>↶</button>
-      <button id="btn-editor-redo" class="icon-btn" title="Повторить (Ctrl+Y)" disabled>↷</button>
-      <button id="btn-editor-find" class="icon-btn" title="Найти">🔍 Найти</button>
-      <button id="btn-editor-replace" class="icon-btn" title="Заменить">✏️ Заменить</button>
-      <button id="save-file" class="icon-btn hidden" title="Сохранить в локальную копию" disabled>💾 Сохранить</button>
-      <button id="revert-file" class="icon-btn hidden" title="Откатить к состоянию в GitHub" disabled>↩️ Откатить</button>
-      <button id="btn-editor-settings" class="icon-btn" title="Настройки редактора">⚙️ Настройки</button>
+      <button id="btn-editor-undo" class="icon-btn icon-only" title="Отменить (Ctrl+Z)" disabled>↶</button>
+      <button id="btn-editor-redo" class="icon-btn icon-only" title="Повторить (Ctrl+Y)" disabled>↷</button>
+      <button id="btn-editor-find" class="icon-btn icon-only" title="Найти">🔍</button>
+      <button id="btn-editor-replace" class="icon-btn icon-only" title="Заменить">✏️</button>
+      <button id="save-file" class="icon-btn icon-only hidden" title="Сохранить в локальную копию" disabled>💾</button>
+      <button id="revert-file" class="icon-btn icon-only hidden" title="Откатить к состоянию в GitHub" disabled>↩️</button>
+      <button id="btn-editor-settings" class="icon-btn icon-only" title="Настройки редактора">⚙️</button>
     </div>
 
     <div id="editor-find-panel" class="editor-find-panel hidden">
@@ -294,7 +294,7 @@
           <span>Размер шрифта</span>
           <span class="editor-settings-value"><span id="editor-font-size-value">14</span> px</span>
         </div>
-        <input id="editor-font-size" class="editor-slider" type="range" min="8" max="24" step="1" value="14">
+        <input id="editor-font-size" class="editor-slider" type="range" min="4" max="24" step="1" value="14">
       </div>
       <div class="modal-actions">
         <button id="editor-settings-done" class="primary">Готово</button>

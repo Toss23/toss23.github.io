@@ -2,7 +2,7 @@ import { $ } from "@core/dom.js";
 
 const STORAGE_KEY = "editor_font_size";
 const DEFAULT_FONT_SIZE = 14;
-const MIN_FONT_SIZE = 8;
+const MIN_FONT_SIZE = 4;
 const MAX_FONT_SIZE = 24;
 
 export function initEditorToolbar({ editorScreen }) {
