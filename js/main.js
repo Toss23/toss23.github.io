@@ -285,7 +285,7 @@ const imageScreen = initImageScreen();
 
 let localWatchTimer = null;
 let dismissedRemoteSha = null;
-let pullInProgress = false;
+let pullInProgress = false; // just a test
 
 function startLocalWatch() {
   stopLocalWatch();
