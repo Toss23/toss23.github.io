@@ -4,6 +4,9 @@ import { getRows } from "@core/keyboard-layouts.js";
 const LANG_KEY = "kb_lang";
 const MODE_KEY = "kb_custom_enabled";
 
+const BACKSPACE_DELAY = 400;
+const BACKSPACE_INTERVAL = 50;
+
 const EXTRA_BUTTONS = [
   { label: "⇥", action: "indent", title: "Таб" },
   { label: "⇤", action: "unindent", title: "Убрать отступ" },
@@ -61,6 +64,25 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   let visible = false;
   let lastTouchTime = 0;
 
+  let bsDelayTimer = null;
+  let bsRepeatTimer = null;
+
+  function startBackspace() {
+    stopBackspace();
+    editorScreen.backspace?.();
+    if (document.activeElement !== textarea) textarea.focus();
+    bsDelayTimer = setTimeout(() => {
+      bsRepeatTimer = setInterval(() => {
+        editorScreen.backspace?.();
+      }, BACKSPACE_INTERVAL);
+    }, BACKSPACE_DELAY);
+  }
+
+  function stopBackspace() {
+    if (bsDelayTimer) { clearTimeout(bsDelayTimer); bsDelayTimer = null; }
+    if (bsRepeatTimer) { clearInterval(bsRepeatTimer); bsRepeatTimer = null; }
+  }
+
   function applyInputMode() {
     textarea.setAttribute("autocomplete", "off");
     textarea.setAttribute("autocorrect", "off");
@@ -89,7 +111,7 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     if (typeof key === "string") { insert(key); return; }
     switch (key.a) {
       case "shift": shift = !shift; render(); break;
-      case "backspace": editorScreen.backspace?.(); if (document.activeElement !== textarea) textarea.focus(); break;
+      case "backspace": break;
       case "space": insert(" "); break;
       case "enter": editorScreen.enterKey?.(); if (document.activeElement !== textarea) textarea.focus(); break;
       case "indent": editorScreen.indent?.(); if (document.activeElement !== textarea) textarea.focus(); break;
@@ -103,16 +125,32 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   }
 
   function attachHandlers(btn, payload) {
+    const isBackspace = typeof payload === "object" && payload?.a === "backspace";
+
+    function fire() {
+      if (isBackspace) startBackspace();
+      else handleKey(payload);
+    }
+
     btn.addEventListener("mousedown", (e) => {
       if (Date.now() - lastTouchTime < 600) return;
       e.preventDefault();
-      handleKey(payload);
+      fire();
     });
     btn.addEventListener("touchstart", (e) => {
       lastTouchTime = Date.now();
       e.preventDefault();
-      handleKey(payload);
+      fire();
     }, { passive: false });
+
+    if (isBackspace) {
+      const stop = () => stopBackspace();
+      btn.addEventListener("mouseup", stop);
+      btn.addEventListener("mouseleave", stop);
+      btn.addEventListener("touchend", stop);
+      btn.addEventListener("touchcancel", stop);
+    }
+
     btn.addEventListener("click", (e) => e.preventDefault());
   }
 
@@ -138,7 +176,6 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     if (!container) return;
     container.innerHTML = "";
 
-    // Ряд дополнительных кнопок (табы, скобки, знаки).
     const extra = document.createElement("div");
     extra.className = "kb-row kb-extra-row";
     for (const b of EXTRA_BUTTONS) {
@@ -150,7 +187,6 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     }
     container.appendChild(extra);
 
-    // Основные буквенные/цифровые ряды.
     const rows = getRows(lang, panel, shift);
     for (const row of rows) {
       const rowEl = document.createElement("div");
@@ -166,7 +202,6 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
       container.appendChild(rowEl);
     }
 
-    // Нижний ряд.
     const bottom = document.createElement("div");
     bottom.className = "kb-row";
     const panelLabel = panel === "letters" ? "?123" : "ABC";
@@ -174,7 +209,7 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     bottom.appendChild(makeKey(panelLabel, { a: panelAction }, { wide: 1.5, special: true, action: panelAction }));
     bottom.appendChild(makeKey("🌐", { a: "lang" }, { wide: 1.5, special: true, action: "lang" }));
     bottom.appendChild(makeKey("⎵", { a: "space" }, { wide: 5, special: true, action: "space" }));
-    bottom.appendChild(makeKey("⌄", { a: "hide" }, { wide: 1.5, special: true, action: "hide" }));
+    bottom.appendChild(makeKey("▼", { a: "hide" }, { wide: 1.5, special: true, action: "hide" }));
     bottom.appendChild(makeKey("⏎", { a: "enter" }, { wide: 2, special: true, action: "enter" }));
     container.appendChild(bottom);
   }
@@ -192,6 +227,7 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   function hide() {
     if (!visible) return;
     visible = false;
+    stopBackspace();
     container.classList.add("hidden");
     onVisibilityChange?.(false);
   }
@@ -207,8 +243,6 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
 
   textarea.addEventListener("focus", () => show());
 
-  // Автоскрытие при уходе с экрана редактора.
-  // Делаем через setInterval — надёжнее, чем subscribe.
   setInterval(() => {
     if (!enabled || !visible) return;
     const screen = document.getElementById("screen-editor");
@@ -225,5 +259,9 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     isEnabled: () => enabled,
     setEnabled,
     isTouch: () => isTouch,
+    getHeight: () => {
+      if (!container || container.classList.contains("hidden")) return 0;
+      return container.getBoundingClientRect().height;
+    },
   };
 }

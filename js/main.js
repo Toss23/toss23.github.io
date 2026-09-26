@@ -48,6 +48,7 @@ import { initReposScreen } from "@screens/repos-screen.js";
 import { initFilesScreen } from "@screens/files-screen.js";
 import { initEditorScreen } from "@screens/editor-screen.js";
 import { initEditorToolbar } from "@ui/editor-toolbar.js";
+import { initEditorContextMenu } from "@ui/editor-context-menu.js";
 import { initHistoryScreen } from "@screens/history-screen.js";
 import { initImageScreen } from "@screens/image-screen.js";
 import { initCommitScreen } from "@screens/commit-screen.js";
@@ -234,6 +235,8 @@ const customKeyboard = initCustomKeyboard({
 });
 
 initEditorToolbar({ editorScreen, customKeyboard });
+
+const editorContextMenu = initEditorContextMenu();
 
 const editorTabs = initEditorTabs({
   onSwitch: switchTab,
@@ -1264,20 +1267,24 @@ async function showEditorContextMenu() {
   if (!textarea) return;
   const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
 
-  const options = [];
+  // Меню появляется над кастомной клавиатурой, если она видна.
+  let anchorBottom = 16;
+  const kbHeight = customKeyboard?.getHeight?.() || 0;
+  if (kbHeight > 0) anchorBottom = kbHeight + 8;
+
+  const items = [];
   if (hasSelection) {
-    options.push({ text: "📋 Копировать", onClick: () => editorCopy(textarea) });
-    options.push({ text: "✂️ Вырезать", onClick: () => editorCut(textarea) });
+    items.push({ text: "Копировать", onClick: () => editorCopy(textarea) });
+    items.push({ text: "Вырезать", onClick: () => editorCut(textarea) });
   }
-  options.push({ text: "📋 Вставить", onClick: () => editorPaste(textarea) });
-  options.push({ text: "🔍 Найти", onClick: () => editorFindSelection(textarea) });
-  options.push({ text: "✅ Выделить всё", onClick: () => {
+  items.push({ text: "Вставить", onClick: () => editorPaste(textarea) });
+  items.push({ text: "Выделить всё", onClick: () => {
     textarea.focus();
     textarea.setSelectionRange(0, textarea.value.length);
   }});
-  options.push({ text: "Отмена", onClick: () => {} });
+  items.push({ text: "Отмена", onClick: () => {} });
 
-  dialogs.choose({ title: "Действия", options });
+  editorContextMenu.open({ items, anchorBottom });
 }
 
 async function editorCopy(textarea) {
