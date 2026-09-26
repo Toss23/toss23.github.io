@@ -26,7 +26,7 @@ const BUTTONS = [
   { label: "]", key: "]" },
 ];
 
-export function initEditorKeybar({ editorScreen, onShow, onHide }) {
+export function initEditorKeybar({ editorScreen, onShow, onHide, isSuppressed }) {
   const bar = $("editor-keybar");
   const textarea = $("file-content");
   const statusEl = $("status");
@@ -102,6 +102,7 @@ export function initEditorKeybar({ editorScreen, onShow, onHide }) {
 
   function show() {
     if (visible) return;
+    if (isSuppressed && isSuppressed()) return;
     visible = true;
     bar.classList.remove("hidden");
     if (statusEl) statusEl.classList.add("hidden");
@@ -121,6 +122,10 @@ export function initEditorKeybar({ editorScreen, onShow, onHide }) {
   }
 
   function syncState() {
+    if (isSuppressed && isSuppressed()) {
+      if (visible) hide();
+      return;
+    }
     if (isEditorFocused()) show();
     else hide();
   }

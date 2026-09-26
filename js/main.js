@@ -228,19 +228,32 @@ const editorScreen = initEditorScreen({
   onContextMenu: showEditorContextMenu,
 });
 
-const customKeyboard = initCustomKeyboard({ editorScreen });
+let editorKeybarRef = null;
 
-initEditorToolbar({ editorScreen, customKeyboard });
-initEditorKeybar({
+const customKeyboard = initCustomKeyboard({
   editorScreen,
   onShow: () => {
-    console.log("[main] keybar onShow → nav скрыт");
+    nav.setVisible(false);
+    if (editorKeybarRef) editorKeybarRef.hide();
+  },
+  onHide: () => {
+    const s = getState().screen;
+    if (s === SCREENS.FILES || s === SCREENS.EDITOR || s === SCREENS.HISTORY || s === SCREENS.IMAGE) {
+      nav.setVisible(true);
+    }
+  },
+});
+
+initEditorToolbar({ editorScreen, customKeyboard });
+editorKeybarRef = initEditorKeybar({
+  editorScreen,
+  isSuppressed: () => !!customKeyboard && customKeyboard.isEnabled && customKeyboard.isEnabled(),
+  onShow: () => {
     nav.setVisible(false);
   },
   onHide: () => {
     const s = getState().screen;
     if (s === SCREENS.FILES || s === SCREENS.EDITOR || s === SCREENS.HISTORY || s === SCREENS.IMAGE) {
-      console.log("[main] keybar onHide → nav показан");
       nav.setVisible(true);
     }
   },

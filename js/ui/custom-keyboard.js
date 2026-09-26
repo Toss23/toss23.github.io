@@ -24,7 +24,7 @@ function saveEnabledPref(v) {
   try { localStorage.setItem(MODE_KEY, v ? "1" : "0"); } catch {}
 }
 
-export function initCustomKeyboard({ editorScreen }) {
+export function initCustomKeyboard({ editorScreen, onShow, onHide }) {
   const textarea = $("file-content");
   if (!textarea || !editorScreen) return null;
 
@@ -146,12 +146,14 @@ export function initCustomKeyboard({ editorScreen }) {
     container.classList.remove("hidden");
     render();
     editorScreen.focus?.();
+    onShow?.();
   }
 
   function hide() {
     if (!visible) return;
     visible = false;
     container.classList.add("hidden");
+    onHide?.();
   }
 
   function setEnabled(v) {
@@ -165,8 +167,6 @@ export function initCustomKeyboard({ editorScreen }) {
 
   textarea.addEventListener("focus", () => show());
 
-  // Не скрываем по blur: на тач-устройствах он срабатывает ложно и клавиатура пропадает сама.
-  // Скрываем только при уходе с экрана редактора.
   subscribe((state) => {
     if (!enabled) return;
     if (state.screen !== "editor" && visible) hide();
