@@ -118,11 +118,14 @@ export function initEditorKeybar({ editorScreen, isActive, onShow, onHide }) {
 
   let visible = false;
 
+  const statusEl = document.getElementById("status");
+
   function show() {
     if (visible) return;
     if (isActive && !isActive()) return;
     visible = true;
     bar.classList.remove("hidden");
+    if (statusEl) statusEl.classList.add("hidden");
     onShow?.();
   }
 
@@ -130,6 +133,7 @@ export function initEditorKeybar({ editorScreen, isActive, onShow, onHide }) {
     if (!visible) return;
     visible = false;
     bar.classList.add("hidden");
+    if (statusEl) statusEl.classList.remove("hidden");
     onHide?.();
   }
 
