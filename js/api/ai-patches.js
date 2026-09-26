@@ -76,7 +76,10 @@ export function checkChange(change, currentContent) {
 
   if (type === "create") {
     if (currentContent !== null) {
-      return { ok: false, status: "fail", reason: "файл уже существует" };
+      if (currentContent?.binary) {
+        return { ok: false, status: "fail", reason: "бинарник нельзя перезаписать текстом" };
+      }
+      return { ok: true, status: "warn", reason: "файл уже существует — будет перезаписан" };
     }
     return { ok: true, status: "ok", reason: "файл будет создан" };
   }
