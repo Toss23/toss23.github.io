@@ -29,7 +29,8 @@ export function parseJson(text) {
   });
 
   if (!out.length) throw new Error("Нет валидных операций в 'changes'");
-  return { version: data.version || 1, changes: out };
+  const commit = typeof data.commit === "string" ? data.commit.trim() : "";
+  return { version: data.version || 1, commit, changes: out };
 }
 
 function normalizeChange(c, index) {

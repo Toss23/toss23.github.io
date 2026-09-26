@@ -40,7 +40,7 @@ export function initCommitScreen({ onSubmit, onCancel, onRevertAll }) {
   });
 
   return {
-    open(items, { mode } = {}) {
+    open(items, { mode, message: initialMessage } = {}) {
       clear(list);
       for (const item of items) {
         const { path, baseText, currentText, type } = item;
@@ -79,7 +79,7 @@ export function initCommitScreen({ onSubmit, onCancel, onRevertAll }) {
         list.appendChild(li);
       }
 
-      message.value = "";
+      message.value = initialMessage || "";
 
       // Кнопка «Откатить всё» — только в local-режиме.
       if (mode === "local") {

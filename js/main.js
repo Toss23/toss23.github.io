@@ -1357,6 +1357,7 @@ function editorFindSelection(textarea) {
 /* ---------- AI-патчи ---------- */
 
 let isPasteInProgress = false;
+let pendingCommitMessage = null;
 
 function groupKeyForPath(path) {
   const ext = (path.split(".").pop() || "").toLowerCase();
@@ -1587,6 +1588,8 @@ async function handleAiJsonLoad(text) {
     return;
   }
 
+  pendingCommitMessage = parsed.commit || null;
+
   const items = [];
   for (const change of parsed.changes) {
     const content = await getCurrentFileContent(change.path);
@@ -1620,6 +1623,15 @@ async function handleAiApply(changes) {
 
   aiModal.showReport({ applied, failed });
   renderFiles();
+
+  if (applied.length && pendingCommitMessage) {
+    const msg = pendingCommitMessage;
+    pendingCommitMessage = null;
+    aiModal.close();
+    setTimeout(() => openCommit(msg), 150);
+  } else {
+    pendingCommitMessage = null;
+  }
 }
 
 async function applyAiResult(path, result) {
@@ -2858,7 +2870,7 @@ async function revertAll() {
 
 /* ---------- Коммит ---------- */
 
-async function openCommit() {
+async function openCommit(initialMessage) {
   const { mode, cloned, dirty, files, base, deleted } = getState();
 
   if (mode === "local" && cloned) await flushDirtyToLocal();
@@ -2927,7 +2939,7 @@ async function openCommit() {
   });
 
   if (filtered.length === 0) { setStatus("Нет изменений"); return; }
-  commitScreen.open(filtered, { mode });
+  commitScreen.open(filtered, { mode, message: initialMessage });
 }
 
 /* ---------- Проверка устаревшей базы ---------- */
