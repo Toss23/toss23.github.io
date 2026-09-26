@@ -7,6 +7,7 @@ const state = {
   user: null,
   repos: [],
   clonedMap: new Map(),
+  clonedDirty: new Set(),
   repo: null,
   branch: null,
   branches: [],

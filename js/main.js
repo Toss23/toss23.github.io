@@ -486,6 +486,7 @@ function logout() {
   clearRemoteChanges();
   setSelectionMode(false);
   reposScreen.reset();
+  setState({ clonedDirty: new Set() });
   header.setLoggedOut();
   setScreen(SCREENS.AUTH);
 }
@@ -3282,6 +3283,8 @@ async function commit(message) {
     commitScreen.close();
     renderFiles();
     setStatus(`Закоммичено: ${newHeadSha.slice(0, 7)}`);
+    // Обновить «грязность» клонированного репо в списке.
+    if (mode === "local") refreshRepoDirty();
     // Если выйдем в список репо — статус уже обновится в exitRepo,
     // но обновим и сейчас, на случай возврата через кнопку «Назад».
   } catch (e) {
