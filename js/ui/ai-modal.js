@@ -40,6 +40,8 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFull
       pasteError.classList.add("hidden");
       pasteError.textContent = "";
     }
+    // Прячем основную AI-панель, чтобы не было двух подложек друг под другом.
+    if (modal) modal.classList.add("hidden");
     pasteModal.classList.remove("hidden");
     setTimeout(() => pasteTextarea.focus(), 50);
   }
@@ -47,6 +49,11 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFull
   function closePaste() {
     if (!pasteModal) return;
     pasteModal.classList.add("hidden");
+    // Возвращаем AI-панель, если она была открыта до вставки.
+    if (modal && !modal.querySelector(".hidden")) {
+      // Ничего не делаем, если AI-панель уже была скрыта пользователем.
+    }
+    if (modal) modal.classList.remove("hidden");
   }
 
   function showPasteError(msg) {
@@ -65,7 +72,10 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFull
     showPasteError("");
     try {
       await onLoadJson(text);
-      closePaste();
+      // При успехе закрываем paste и оставляем AI-панель видимой —
+      // предпросмотр патчей рендерится внутри неё.
+      if (pasteModal) pasteModal.classList.add("hidden");
+      if (modal) modal.classList.remove("hidden");
     } catch (e) {
       showPasteError(e.message || String(e));
     }
