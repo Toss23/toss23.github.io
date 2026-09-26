@@ -127,6 +127,11 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   function attachHandlers(btn, payload) {
     const isBackspace = typeof payload === "object" && payload?.a === "backspace";
 
+    // Касание без движения по кнопке — тап. Со сдвигом — не тап, чтобы дать скроллу работать.
+    const TAP_MAX_MS = 700;
+    const TAP_MAX_DIST = 12;
+    let sx = 0, sy = 0, st = 0, moved = false;
+
     function fire() {
       if (isBackspace) startBackspace();
       else handleKey(payload);
@@ -137,11 +142,34 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
       e.preventDefault();
       fire();
     });
+
     btn.addEventListener("touchstart", (e) => {
       lastTouchTime = Date.now();
+      if (e.touches.length !== 1) { moved = true; return; }
+      sx = e.touches[0].clientX;
+      sy = e.touches[0].clientY;
+      st = Date.now();
+      moved = false;
+    }, { passive: true });
+
+    btn.addEventListener("touchmove", (e) => {
+      if (moved) return;
+      const t = e.touches[0];
+      const dx = t.clientX - sx;
+      const dy = t.clientY - sy;
+      if (Math.abs(dx) > TAP_MAX_DIST || Math.abs(dy) > TAP_MAX_DIST) moved = true;
+    }, { passive: true });
+
+    btn.addEventListener("touchend", (e) => {
+      const wasMoved = moved;
+      moved = false;
+      if (wasMoved) return;
+      if (Date.now() - st > TAP_MAX_MS) return;
       e.preventDefault();
       fire();
     }, { passive: false });
+
+    btn.addEventListener("touchcancel", () => { moved = false; }, { passive: true });
 
     if (isBackspace) {
       const stop = () => stopBackspace();

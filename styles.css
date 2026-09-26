@@ -1868,11 +1868,24 @@ html, body, .list, .move-list, .editor-highlight, .ai-body, .diff-box {
   justify-content: center;
 }
 
-/* Ряд дополнительных кнопок над основными клавишами */
+/* Ряд дополнительных кнопок — скроллится по горизонтали,
+   кнопки нормального размера и не сжимаются */
+.kb-extra-row {
+  justify-content: flex-start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+.kb-extra-row::-webkit-scrollbar { display: none; }
 .kb-extra-row .kb-key {
-  font-size: 13px;
-  padding: 6px 3px;
-  min-height: 36px;
+  flex: 0 0 auto;
+  min-width: 48px;
+  min-height: 44px;
+  font-size: 16px;
+  padding: 8px 10px;
 }
 
 /* ============================================================
