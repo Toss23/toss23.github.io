@@ -300,7 +300,10 @@
         <h3>Карта проекта — предпросмотр</h3>
         <button id="ai-map-preview-close" class="icon-btn" title="Закрыть">✕</button>
       </div>
-      <textarea id="ai-map-preview-body" class="ai-map-preview-body" readonly spellcheck="false"></textarea>
+      <div class="map-preview-wrap">
+        <pre id="ai-map-preview-hl" class="ai-map-preview-hl" aria-hidden="true"><code id="ai-map-preview-hl-code"></code></pre>
+        <textarea id="ai-map-preview-body" class="ai-map-preview-body" readonly spellcheck="false"></textarea>
+      </div>
       <div class="modal-actions">
         <button id="ai-map-preview-cancel" class="icon-btn">Закрыть</button>
         <button id="ai-map-preview-download" class="primary">💾 Скачать .md</button>

@@ -49,6 +49,7 @@ import { initFilesScreen } from "@screens/files-screen.js";
 import { initEditorScreen } from "@screens/editor-screen.js";
 import { initEditorToolbar } from "@ui/editor-toolbar.js";
 import { initEditorContextMenu } from "@ui/editor-context-menu.js";
+import { initMapPreviewHighlight } from "@ui/map-preview-highlight.js";
 import { initHistoryScreen } from "@screens/history-screen.js";
 import { initImageScreen } from "@screens/image-screen.js";
 import { initCommitScreen } from "@screens/commit-screen.js";
@@ -237,6 +238,8 @@ const customKeyboard = initCustomKeyboard({
 initEditorToolbar({ editorScreen, customKeyboard });
 
 const editorContextMenu = initEditorContextMenu();
+
+initMapPreviewHighlight();
 
 const editorTabs = initEditorTabs({
   onSwitch: switchTab,

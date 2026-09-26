@@ -1301,23 +1301,54 @@ body {
   resize: vertical;
   margin-bottom: 6px;
 }
-.ai-map-preview-body {
+.map-preview-wrap {
+  position: relative;
   flex: 1;
   width: 100%;
   min-height: 40vh;
   max-height: 60vh;
+  overflow: hidden;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background: #1a1a1a;
+}
+
+.ai-map-preview-hl,
+.ai-map-preview-body {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 10px;
+  border: none;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
-  background: #1a1a1a;
-  color: #ddd;
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 10px;
+  white-space: pre;
+  overflow: auto;
   box-sizing: border-box;
-  resize: vertical;
   outline: none;
 }
+
+.ai-map-preview-body {
+  background: transparent;
+  color: transparent;
+  caret-color: #A9B7C6;
+  resize: none;
+  z-index: 2;
+}
+.ai-map-preview-body::selection {
+  background: rgba(88, 130, 193, 0.35);
+  color: transparent;
+}
+
+.ai-map-preview-hl {
+  background: #1a1a1a;
+  color: #ddd;
+  z-index: 1;
+  pointer-events: none;
+  scrollbar-width: none;
+}
+.ai-map-preview-hl::-webkit-scrollbar { display: none; }
 
 /* ============================================================
    Модалка вставки JSON
