@@ -159,7 +159,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
     caretTimer = setTimeout(renderHighlight, 40);
   }
 
-  /* ---------- Правки ---------- */
+  /* ---------- Правки и автосохранение ---------- */
 
   function scheduleAutosave() {
     if (!base || !onAutosave) return;
@@ -253,7 +253,81 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
     afterEdit();
   }
 
-  /* ---------- Обработка клавиш ---------- */
+  /* ---------- Автозакрытие через beforeinput ---------- */
+
+  function handleBeforeInput(e) {
+    if (!textarea || textarea.disabled || !base) return;
+
+    // Backspace внутри пустой пары — удаляем обе скобки.
+    if (e.inputType === "deleteContentBackward") {
+      const text = textarea.value;
+      const pos = textarea.selectionStart;
+      if (pos === textarea.selectionEnd && pos > 0 && pos < text.length) {
+        const leftCh = text[pos - 1];
+        const rightCh = text[pos];
+        if (OPEN_TO_CLOSE[leftCh] && OPEN_TO_CLOSE[leftCh] === rightCh) {
+          e.preventDefault();
+          textarea.setRangeText("", pos - 1, pos + 1, "end");
+          takeSnapshot(true);
+          afterEdit();
+        }
+      }
+      return;
+    }
+
+    if (e.inputType !== "insertText") return;
+    const ch = e.data;
+    if (!ch || ch.length !== 1) return;
+
+    const text = textarea.value;
+    const pos = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    // Открывающие скобки и кавычки — автозакрытие.
+    if (OPEN_TO_CLOSE[ch]) {
+      const isQuote = ch === "\"" || ch === "'";
+
+      if (isQuote) {
+        const prevCh = pos > 0 ? text[pos - 1] : "";
+        const nextCh = pos < text.length ? text[pos] : "";
+        if (prevCh === "\\") return;
+        if (pos === end && nextCh === ch) {
+          e.preventDefault();
+          textarea.setSelectionRange(pos + 1, pos + 1);
+          scheduleCaretHighlight();
+          return;
+        }
+        if (/[A-Za-z0-9_]/.test(prevCh)) return;
+      } else {
+        const nextCh = pos < text.length ? text[pos] : "";
+        if (pos === end && CLOSE_CHARS.has(nextCh)) {
+          e.preventDefault();
+          textarea.setRangeText(ch + nextCh, pos, pos + 1, "end");
+          textarea.setSelectionRange(pos + 1, pos + 1);
+          takeSnapshot(true);
+          afterEdit();
+          return;
+        }
+      }
+
+      e.preventDefault();
+      const close = OPEN_TO_CLOSE[ch];
+      const selected = textarea.value.slice(pos, end);
+      insertText(ch + selected + close, 1, 1 + selected.length);
+      return;
+    }
+
+    // Закрывающая скобка — если такая же справа, пропускаем ввод.
+    if (CLOSE_CHARS.has(ch)) {
+      if (pos === end && text[pos] === ch) {
+        e.preventDefault();
+        textarea.setSelectionRange(pos + 1, pos + 1);
+        scheduleCaretHighlight();
+      }
+    }
+  }
+
+  /* ---------- keydown: Tab, Enter, undo/redo, "}" ---------- */
 
   function handleKeydown(e) {
     if (!textarea || textarea.disabled || !base) return;
@@ -299,69 +373,6 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
       return;
     }
 
-    if (OPEN_TO_CLOSE[e.key]) {
-      const text = textarea.value;
-      const pos = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const isQuote = e.key === "\"" || e.key === "'";
-
-      if (isQuote) {
-        const prevCh = pos > 0 ? text[pos - 1] : "";
-        const nextCh = pos < text.length ? text[pos] : "";
-        if (prevCh === "\\") return;
-        if (nextCh === e.key && pos === end) {
-          e.preventDefault();
-          textarea.setSelectionRange(pos + 1, pos + 1);
-          scheduleCaretHighlight();
-          return;
-        }
-        if (/[A-Za-z0-9_]/.test(prevCh)) return;
-      } else {
-        const nextCh = pos < text.length ? text[pos] : "";
-        if (CLOSE_CHARS.has(nextCh) && pos === end) {
-          e.preventDefault();
-          textarea.setRangeText(e.key + nextCh, pos, pos + 1, "end");
-          textarea.setSelectionRange(pos + 1, pos + 1);
-          takeSnapshot(true);
-          afterEdit();
-          return;
-        }
-      }
-
-      e.preventDefault();
-      const close = OPEN_TO_CLOSE[e.key];
-      const selected = textarea.value.slice(pos, end);
-      insertText(e.key + selected + close, 1, 1 + selected.length);
-      return;
-    }
-
-    if (CLOSE_CHARS.has(e.key)) {
-      const text = textarea.value;
-      const pos = textarea.selectionStart;
-      if (pos === textarea.selectionEnd && text[pos] === e.key) {
-        e.preventDefault();
-        textarea.setSelectionRange(pos + 1, pos + 1);
-        scheduleCaretHighlight();
-        return;
-      }
-    }
-
-    if (e.key === "Backspace") {
-      const text = textarea.value;
-      const pos = textarea.selectionStart;
-      if (pos === textarea.selectionEnd && pos > 0 && pos < text.length) {
-        const leftCh = text[pos - 1];
-        const rightCh = text[pos];
-        if (OPEN_TO_CLOSE[leftCh] && OPEN_TO_CLOSE[leftCh] === rightCh) {
-          e.preventDefault();
-          textarea.setRangeText("", pos - 1, pos + 1, "end");
-          takeSnapshot(true);
-          afterEdit();
-          return;
-        }
-      }
-    }
-
     if (e.key === "}") {
       const text = textarea.value;
       const pos = textarea.selectionStart;
@@ -382,6 +393,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
   /* ---------- Обработчики ---------- */
 
   textarea.addEventListener("keydown", handleKeydown);
+  textarea.addEventListener("beforeinput", handleBeforeInput);
 
   textarea.addEventListener("input", () => {
     if (!historySuspend) takeSnapshot(false);
