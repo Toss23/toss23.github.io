@@ -1795,3 +1795,59 @@ html, body, .list, .move-list, .editor-highlight, .ai-body, .diff-box {
     background: rgba(255, 255, 255, 0.15);
   }
 }
+
+/* ============================================================
+   Кастомная клавиатура
+   ============================================================ */
+.custom-keyboard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 3px;
+  padding-bottom: calc(4px + env(safe-area-inset-bottom));
+  background: #2d2d2d;
+  border-top: 1px solid #333;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.custom-keyboard.hidden { display: none; }
+
+.kb-row {
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+}
+
+.kb-key {
+  flex: 1;
+  min-width: 0;
+  background: #3c3c3c;
+  border: 1px solid #4a4a4a;
+  color: #ddd;
+  border-radius: 5px;
+  padding: 8px 4px;
+  font-size: 16px;
+  font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.kb-key:active { background: #4a4a4a; }
+.kb-key.special {
+  background: #333;
+  color: #bbb;
+  font-size: 14px;
+}
+.kb-key.special:active { background: #444; }
+
+@media (max-width: 500px) {
+  .custom-keyboard { padding-left: 2px; padding-right: 2px; }
+  .kb-key { font-size: 15px; padding: 6px 3px; min-height: 42px; }
+}

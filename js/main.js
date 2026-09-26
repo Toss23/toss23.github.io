@@ -40,6 +40,7 @@ import { parseFile, renderProjectMap, isAnalyzable, hasServiceFolder } from "@ap
 import { initEditorTabs } from "@ui/editor-tabs.js";
 import { initMapSelectModal } from "@ui/map-select-modal.js";
 import { initEditorKeybar } from "@ui/editor-keybar.js";
+import { initCustomKeyboard } from "@ui/custom-keyboard.js";
 import { initKeyboardViewport } from "@ui/keyboard-viewport.js";
 
 import { initAuthScreen } from "@screens/auth-screen.js";
@@ -226,6 +227,8 @@ const editorScreen = initEditorScreen({
   onAutosave: handleAutosave,
   onContextMenu: showEditorContextMenu,
 });
+
+initCustomKeyboard({ editorScreen });
 
 initEditorToolbar({ editorScreen });
 initEditorKeybar({

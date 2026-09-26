@@ -536,11 +536,116 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
     },
     insertAtCursor(text) {
       if (!textarea || !base) return;
+
+      // Умное автозакрытие скобок и кавычек при вставке одного символа.
+      if (text.length === 1) {
+        const ch = text;
+        const value = textarea.value;
+        const pos = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+
+        if (OPEN_TO_CLOSE[ch]) {
+          const isQuote = ch === "\"" || ch === "'";
+
+          if (isQuote) {
+            const prevCh = pos > 0 ? value[pos - 1] : "";
+            const nextCh = pos < value.length ? value[pos] : "";
+            if (prevCh === "\\") {
+              // экранированный — вставляем как есть
+            } else if (pos === end && nextCh === ch) {
+              textarea.setSelectionRange(pos + 1, pos + 1);
+              scheduleCaretHighlight();
+              return;
+            } else if (/[A-Za-z0-9_]/.test(prevCh)) {
+              // внутри слова — не закрываем
+            } else {
+              textarea.setRangeText(ch + ch, pos, end, "end");
+              textarea.setSelectionRange(pos + 1, pos + 1);
+              takeSnapshot(true);
+              afterEdit();
+              return;
+            }
+          } else {
+            const nextCh = pos < value.length ? value[pos] : "";
+            if (pos === end && CLOSE_CHARS.has(nextCh)) {
+              textarea.setRangeText(ch + nextCh, pos, pos + 1, "end");
+              textarea.setSelectionRange(pos + 1, pos + 1);
+              takeSnapshot(true);
+              afterEdit();
+              return;
+            }
+            const selected = value.slice(pos, end);
+            textarea.setRangeText(ch + selected + OPEN_TO_CLOSE[ch], pos, end, "end");
+            textarea.setSelectionRange(pos + 1, pos + 1 + selected.length);
+            takeSnapshot(true);
+            afterEdit();
+            return;
+          }
+        } else if (CLOSE_CHARS.has(ch)) {
+          if (pos === end && value[pos] === ch) {
+            textarea.setSelectionRange(pos + 1, pos + 1);
+            scheduleCaretHighlight();
+            return;
+          }
+        }
+      }
+
+      // Обычная вставка.
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
       textarea.setRangeText(text, start, end, "end");
       takeSnapshot(true);
       afterEdit();
+
+      // Скролл к курсору, если он вне видимой области.
+      const value = textarea.value;
+      const pos = textarea.selectionStart;
+      const before = value.slice(0, pos);
+      const line = (before.match(/\n/g) || []).length;
+      const lh = parseFloat(getComputedStyle(textarea).lineHeight) || 22;
+      const target = line * lh;
+      if (target < textarea.scrollTop || target + lh > textarea.scrollTop + textarea.clientHeight) {
+        textarea.scrollTop = Math.max(0, target - textarea.clientHeight / 2);
+        if (highlight) highlight.scrollTop = textarea.scrollTop;
+        if (lineInner) lineInner.style.transform = "translateY(" + (-textarea.scrollTop) + "px)";
+      }
+    },
+    backspace() {
+      if (!textarea || !base) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      if (start !== end) {
+        textarea.setRangeText("", start, end, "end");
+      } else if (start > 0) {
+        textarea.setRangeText("", start - 1, start, "end");
+      } else {
+        return;
+      }
+      takeSnapshot(true);
+      afterEdit();
+    },
+    enterKey() {
+      if (!textarea || !base) return;
+      const { indent, beforeCaret, afterCaret } = currentLineInfo();
+      const trimmedEnd = beforeCaret.replace(/[ \t]+$/, "");
+      const trimmedAfter = afterCaret.replace(/^[ \t]*/, "");
+      if (trimmedEnd.endsWith("{")) {
+        const nextIndent = indent + INDENT_UNIT;
+        if (trimmedAfter.startsWith("}")) {
+          insertText("\n" + nextIndent + "\n" + indent, 1 + nextIndent.length, 1 + nextIndent.length);
+        } else {
+          insertText("\n" + nextIndent);
+        }
+        return;
+      }
+      if (trimmedAfter.startsWith("}")) {
+        let baseIndent = indent;
+        if (baseIndent.length >= INDENT_SIZE) baseIndent = baseIndent.slice(0, -INDENT_SIZE);
+        insertText("\n" + baseIndent);
+        return;
+      }
+      if (indent) { insertText("\n" + indent); return; }
+      insertText("\n");
     },
     moveCursor(dir) {
       if (!textarea) return;
