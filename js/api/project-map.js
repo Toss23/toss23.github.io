@@ -39,6 +39,20 @@ export function hasServiceFolder(path) {
   return false;
 }
 
+export function isAnalyzable(path) {
+  const kind = kindOf(path);
+  return kind === "js" || kind === "cs";
+}
+
+export function hasServiceFolder(path) {
+  if (!path) return false;
+  const parts = path.split("/");
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (/^services?$/i.test(parts[i])) return true;
+  }
+  return false;
+}
+
 function formatSize(bytes) {
   if (!bytes && bytes !== 0) return "?";
   if (bytes < 1024) return bytes + " Б";
