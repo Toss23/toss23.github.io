@@ -1262,15 +1262,22 @@ function handleAutosave(path, contentLf) {
 
 /* ---------- Контекстное меню редактора ---------- */
 
-async function showEditorContextMenu() {
+async function showEditorContextMenu(pos) {
   const textarea = document.getElementById("file-content");
   if (!textarea) return;
   const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
 
-  // Меню появляется над кастомной клавиатурой, если она видна.
-  let anchorBottom = 16;
+  // Координаты тапа. Если пришли без координат — берём центр textarea.
+  let x = pos?.x, y = pos?.y;
+  if (typeof x !== "number" || typeof y !== "number") {
+    const r = textarea.getBoundingClientRect();
+    x = r.left + r.width / 2;
+    y = r.top + r.height / 2;
+  }
+
+  // Нижняя граница — верх кастомной клавиатуры, если она видна.
   const kbHeight = customKeyboard?.getHeight?.() || 0;
-  if (kbHeight > 0) anchorBottom = kbHeight + 8;
+  const bottomLimit = window.innerHeight - kbHeight - 8;
 
   const items = [];
   if (hasSelection) {
@@ -1284,7 +1291,7 @@ async function showEditorContextMenu() {
   }});
   items.push({ text: "Отмена", onClick: () => {} });
 
-  editorContextMenu.open({ items, anchorBottom });
+  editorContextMenu.open({ items, x, y, bottomLimit });
 }
 
 async function editorCopy(textarea) {

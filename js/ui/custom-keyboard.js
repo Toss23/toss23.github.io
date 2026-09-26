@@ -271,6 +271,13 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
 
   textarea.addEventListener("focus", () => show());
 
+  // Если клавиатуру скрыли кнопкой ▼, но textarea осталась в фокусе,
+  // событие focus при повторном тапе не выстрелит. Ловим pointerdown.
+  textarea.addEventListener("pointerdown", () => {
+    if (!enabled || visible) return;
+    setTimeout(show, 0);
+  }, { passive: true });
+
   setInterval(() => {
     if (!enabled || !visible) return;
     const screen = document.getElementById("screen-editor");

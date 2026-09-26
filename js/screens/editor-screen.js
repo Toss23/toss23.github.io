@@ -422,7 +422,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
   textarea.addEventListener("contextmenu", (e) => {
     if (typeof onContextMenu === "function") {
       e.preventDefault();
-      onContextMenu();
+      onContextMenu({ x: e.clientX, y: e.clientY });
     }
   });
 
