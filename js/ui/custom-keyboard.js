@@ -7,6 +7,9 @@ const MODE_KEY = "kb_custom_enabled";
 const BACKSPACE_DELAY = 400;
 const BACKSPACE_INTERVAL = 50;
 
+// Поля, для которых работает кастомная клавиатура.
+const EDITOR_FIELD_IDS = ["file-content", "editor-find-input", "editor-replace-input"];
+
 const EXTRA_BUTTONS = [
   { label: "⇥", action: "indent", title: "Таб" },
   { label: "⇤", action: "unindent", title: "Убрать отступ" },
@@ -67,14 +70,28 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   let bsDelayTimer = null;
   let bsRepeatTimer = null;
 
+  function getFields() {
+    return EDITOR_FIELD_IDS
+      .map((id) => document.getElementById(id))
+      .filter(Boolean);
+  }
+
+  function getTarget() {
+    const a = document.activeElement;
+    if (a && EDITOR_FIELD_IDS.includes(a.id)) return a;
+    return textarea;
+  }
+
+  function isTargetInEditor() {
+    const a = document.activeElement;
+    return !!(a && EDITOR_FIELD_IDS.includes(a.id));
+  }
+
   function startBackspace() {
     stopBackspace();
-    editorScreen.backspace?.();
-    if (document.activeElement !== textarea) textarea.focus();
+    doBackspace();
     bsDelayTimer = setTimeout(() => {
-      bsRepeatTimer = setInterval(() => {
-        editorScreen.backspace?.();
-      }, BACKSPACE_INTERVAL);
+      bsRepeatTimer = setInterval(doBackspace, BACKSPACE_INTERVAL);
     }, BACKSPACE_DELAY);
   }
 
@@ -83,13 +100,34 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     if (bsRepeatTimer) { clearInterval(bsRepeatTimer); bsRepeatTimer = null; }
   }
 
+  function doBackspace() {
+    const el = getTarget();
+    if (el === textarea) {
+      editorScreen.backspace?.();
+      if (document.activeElement !== textarea) textarea.focus();
+      return;
+    }
+    const s = el.selectionStart ?? el.value.length;
+    const e = el.selectionEnd ?? s;
+    if (s !== e) {
+      el.setRangeText("", s, e, "end");
+    } else if (s > 0) {
+      el.setRangeText("", s - 1, s, "end");
+    } else {
+      return;
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
   function applyInputMode() {
-    textarea.setAttribute("autocomplete", "off");
-    textarea.setAttribute("autocorrect", "off");
-    textarea.setAttribute("autocapitalize", "off");
-    textarea.setAttribute("spellcheck", "false");
-    if (enabled) textarea.setAttribute("inputmode", "none");
-    else textarea.removeAttribute("inputmode");
+    for (const el of getFields()) {
+      el.setAttribute("autocomplete", "off");
+      el.setAttribute("autocorrect", "off");
+      el.setAttribute("autocapitalize", "off");
+      el.setAttribute("spellcheck", "false");
+      if (enabled) el.setAttribute("inputmode", "none");
+      else el.removeAttribute("inputmode");
+    }
   }
 
   function setLang(l) {
@@ -98,24 +136,59 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     render();
   }
 
-  function insert(text) {
-    if (shift && panel === "letters" && text.length === 1 && /[A-Za-zА-Яа-я]/.test(text)) {
+  function insertAtTarget(text) {
+    const el = getTarget();
+    if (el === textarea) {
+      if (shift && panel === "letters" && text.length === 1 && /[A-Za-zА-Яа-я]/.test(text)) {
+        shift = false;
+        updateShiftButton();
+      }
+      editorScreen.insertAtCursor?.(text);
+      if (document.activeElement !== textarea) textarea.focus();
+      return;
+    }
+    const s = el.selectionStart ?? el.value.length;
+    const e = el.selectionEnd ?? s;
+    el.setRangeText(text, s, e, "end");
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    if (shift && text.length === 1 && /[A-Za-zА-Яа-я]/.test(text)) {
       shift = false;
       updateShiftButton();
     }
-    editorScreen.insertAtCursor?.(text);
-    if (document.activeElement !== textarea) textarea.focus();
+  }
+
+  function enterAtTarget() {
+    const el = getTarget();
+    if (el === textarea) {
+      editorScreen.enterKey?.();
+      if (document.activeElement !== textarea) textarea.focus();
+      return;
+    }
+    // Эмулируем Enter — обработчики на полях поиска сработают (найти следующее).
+    el.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Enter", bubbles: true, cancelable: true,
+    }));
   }
 
   function handleKey(key) {
-    if (typeof key === "string") { insert(key); return; }
+    if (typeof key === "string") { insertAtTarget(key); return; }
     switch (key.a) {
       case "shift": shift = !shift; render(); break;
       case "backspace": break;
-      case "space": insert(" "); break;
-      case "enter": editorScreen.enterKey?.(); if (document.activeElement !== textarea) textarea.focus(); break;
-      case "indent": editorScreen.indent?.(); if (document.activeElement !== textarea) textarea.focus(); break;
-      case "unindent": editorScreen.unindent?.(); if (document.activeElement !== textarea) textarea.focus(); break;
+      case "space": insertAtTarget(" "); break;
+      case "enter": enterAtTarget(); break;
+      case "indent":
+        if (getTarget() === textarea) {
+          editorScreen.indent?.();
+          if (document.activeElement !== textarea) textarea.focus();
+        }
+        break;
+      case "unindent":
+        if (getTarget() === textarea) {
+          editorScreen.unindent?.();
+          if (document.activeElement !== textarea) textarea.focus();
+        }
+        break;
       case "numbers": panel = "numbers"; shift = false; render(); break;
       case "symbols": panel = "symbols"; shift = false; render(); break;
       case "letters": panel = "letters"; shift = false; render(); break;
@@ -126,8 +199,6 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
 
   function attachHandlers(btn, payload) {
     const isBackspace = typeof payload === "object" && payload?.a === "backspace";
-
-    // Касание без движения по кнопке — тап. Со сдвигом — не тап, чтобы дать скроллу работать.
     const TAP_MAX_MS = 700;
     const TAP_MAX_DIST = 12;
     let sx = 0, sy = 0, st = 0, moved = false;
@@ -248,7 +319,12 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     visible = true;
     container.classList.remove("hidden");
     render();
-    if (document.activeElement !== textarea) textarea.focus();
+    const a = document.activeElement;
+    if (a && EDITOR_FIELD_IDS.includes(a.id)) {
+      // оставляем фокус там, где он был
+    } else {
+      textarea.focus();
+    }
     onVisibilityChange?.(true);
   }
 
@@ -269,20 +345,33 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     if (!enabled) hide();
   }
 
-  textarea.addEventListener("focus", () => show());
+  // Следим за фокусом на любом из полей редактора.
+  document.addEventListener("focusin", (e) => {
+    if (!enabled) return;
+    const t = e.target;
+    if (t && EDITOR_FIELD_IDS.includes(t.id)) show();
+  });
 
-  // Если клавиатуру скрыли кнопкой ▼, но textarea осталась в фокусе,
-  // событие focus при повторном тапе не выстрелит. Ловим pointerdown.
-  textarea.addEventListener("pointerdown", () => {
-    if (!enabled || visible) return;
-    setTimeout(show, 0);
-  }, { passive: true });
+  document.addEventListener("focusout", () => {
+    if (!enabled || !visible) return;
+    // Даём браузеру перевести фокус и проверяем, куда пришли.
+    setTimeout(() => {
+      if (!isTargetInEditor()) hide();
+    }, 80);
+  });
 
+  // Автоскрытие при уходе с экрана редактора.
   setInterval(() => {
     if (!enabled || !visible) return;
     const screen = document.getElementById("screen-editor");
     if (!screen || screen.classList.contains("hidden")) hide();
   }, 400);
+
+  // Реакция на изменение настройки «Кастомная клавиатура» во время работы.
+  setInterval(() => {
+    const pref = loadEnabledPref();
+    if (pref !== enabled && isTouch) setEnabled(pref);
+  }, 500);
 
   applyInputMode();
   render();
