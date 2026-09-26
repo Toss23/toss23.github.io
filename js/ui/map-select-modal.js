@@ -1,9 +1,25 @@
 import { $, el, clear } from "@core/dom.js";
 import { formatSize } from "@core/format.js";
+import { kindOf } from "@api/project-map.js";
+
+const TYPE_GROUPS = [
+  { key: "cs", label: "C#", hint: ".cs", matches: ["cs"] },
+  { key: "js", label: "JavaScript", hint: ".js .ts .mjs", matches: ["js"] },
+  { key: "other", label: "Остальные", hint: "css, html, md, json, ...", matches: ["css", "html", "md", "json", "other"] },
+];
+
+function groupKeyForFile(path) {
+  const k = kindOf(path);
+  for (const g of TYPE_GROUPS) {
+    if (g.matches.includes(k)) return g.key;
+  }
+  return "other";
+}
 
 export function initMapSelectModal() {
   const modal = $("map-select-modal");
   const list = $("map-select-list");
+  const typeList = $("map-type-list");
   const closeBtn = $("map-select-close");
   const allBtn = $("map-select-all");
   const noneBtn = $("map-select-none");
@@ -15,6 +31,8 @@ export function initMapSelectModal() {
   let resolver = null;
   let items = [];
   let selected = new Set();
+  let selectedTypes = new Set();
+  let allFiles = [];
 
   function close(result) {
     modal.classList.add("hidden");
@@ -24,10 +42,40 @@ export function initMapSelectModal() {
   }
 
   function updateOkState() {
-    if (okBtn) okBtn.disabled = selected.size === 0;
+    if (!okBtn) return;
+    okBtn.disabled = selected.size === 0 || selectedTypes.size === 0;
   }
 
-  function render() {
+  function renderTypes() {
+    if (!typeList) return;
+    clear(typeList);
+    for (const g of TYPE_GROUPS) {
+      const cb = el("input", { type: "checkbox", class: "checkbox" });
+      cb.checked = selectedTypes.has(g.key);
+      cb.addEventListener("change", () => {
+        if (cb.checked) selectedTypes.add(g.key);
+        else selectedTypes.delete(g.key);
+        const wrap = cb.closest(".map-type-item");
+        if (wrap) wrap.classList.toggle("checked", cb.checked);
+        updateOkState();
+      });
+
+      const wrap = el("label", { class: "map-type-item" }, [
+        cb,
+        el("span", { text: g.label }),
+        el("span", { class: "meta", text: g.hint }),
+      ]);
+      if (cb.checked) wrap.classList.add("checked");
+      wrap.addEventListener("click", (e) => {
+        if (e.target === cb) return;
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event("change"));
+      });
+      typeList.appendChild(wrap);
+    }
+  }
+
+  function renderPaths() {
     clear(list);
     for (const item of items) {
       const cb = el("input", { type: "checkbox", class: "checkbox" });
@@ -63,24 +111,31 @@ export function initMapSelectModal() {
   if (cancelBtn) cancelBtn.addEventListener("click", () => close(null));
   if (allBtn) allBtn.addEventListener("click", () => {
     selected = new Set(items.map((i) => i.name));
-    render();
+    selectedTypes = new Set(TYPE_GROUPS.map((g) => g.key));
+    renderTypes();
+    renderPaths();
   });
   if (noneBtn) noneBtn.addEventListener("click", () => {
     selected.clear();
-    render();
+    selectedTypes.clear();
+    renderTypes();
+    renderPaths();
   });
   if (okBtn) okBtn.addEventListener("click", () => {
-    if (!selected.size) return;
-    close(new Set(selected));
+    if (!selected.size || !selectedTypes.size) return;
+    close({ paths: new Set(selected), types: new Set(selectedTypes) });
   });
 
   return {
-    ask(topItems) {
+    ask(topItems, files) {
       return new Promise((resolve) => {
         items = topItems;
+        allFiles = files || [];
         selected = new Set(topItems.map((i) => i.name));
+        selectedTypes = new Set(TYPE_GROUPS.map((g) => g.key));
         resolver = resolve;
-        render();
+        renderTypes();
+        renderPaths();
         modal.classList.remove("hidden");
       });
     },

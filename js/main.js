@@ -1328,12 +1328,23 @@ function computeTopLevel(files) {
   });
 }
 
+function groupKeyForPath(path) {
+  const ext = (path.split(".").pop() || "").toLowerCase();
+  if (ext === "cs") return "cs";
+  if (["js", "mjs", "cjs", "ts", "jsx", "tsx"].includes(ext)) return "js";
+  return "other";
+}
+
 function filterFilesBySelection(files, selection) {
   if (!selection) return files;
+  const paths = selection.paths instanceof Set ? selection.paths : selection;
+  const types = selection.types instanceof Set ? selection.types : null;
   return files.filter((f) => {
     const slash = f.path.indexOf("/");
     const top = slash < 0 ? f.path : f.path.slice(0, slash);
-    return selection.has(top);
+    if (!paths.has(top)) return false;
+    if (types && !types.has(groupKeyForPath(f.path))) return false;
+    return true;
   });
 }
 
@@ -1348,7 +1359,7 @@ async function handleGenerateProjectMap() {
   }
 
   const topItems = computeTopLevel(files);
-  const selection = await mapSelectModal.ask(topItems);
+  const selection = await mapSelectModal.ask(topItems, files);
   if (!selection) return;
 
   const subset = filterFilesBySelection(files, selection);
@@ -1422,7 +1433,7 @@ async function handleGenerateFullInstructions() {
   }
 
   const topItems = computeTopLevel(files);
-  const selection = await mapSelectModal.ask(topItems);
+  const selection = await mapSelectModal.ask(topItems, files);
   if (!selection) return;
 
   const subset = filterFilesBySelection(files, selection);
