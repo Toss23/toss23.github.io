@@ -216,6 +216,11 @@ function parseCsharpFile(content) {
    Общая структура файла
    ============================================================ */
 
+export function isAnalyzable(path) {
+  const k = kindOf(path);
+  return k === "js" || k === "cs";
+}
+
 export function parseFile(path, content) {
   const kind = kindOf(path);
   if (kind === "cs") {
@@ -367,7 +372,7 @@ function renderCsSection(info) {
 function renderFileSection(info) {
   const { path, size, kind } = info;
   const out = [];
-  out.push("### " + path + " \u00B7 " + formatSize(size));
+  out.push("### " + path);
 
   if (kind === "js") {
     out.push(renderJsSection(info));

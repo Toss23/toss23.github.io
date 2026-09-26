@@ -36,7 +36,7 @@ import { initRepoActionsModal } from "@ui/repo-actions-modal.js";
 import { initUpdateModal } from "@ui/update-modal.js";
 import { initAiModal } from "@ui/ai-modal.js";
 import { parseJson, checkChange, applyChange } from "@api/ai-patches.js";
-import { parseFile, renderProjectMap } from "@api/project-map.js";
+import { parseFile, renderProjectMap, isAnalyzable } from "@api/project-map.js";
 import { initEditorTabs } from "@ui/editor-tabs.js";
 import { initMapSelectModal } from "@ui/map-select-modal.js";
 import { initEditorKeybar } from "@ui/editor-keybar.js";
@@ -1339,11 +1339,13 @@ function filterFilesBySelection(files, selection) {
   if (!selection) return files;
   const paths = selection.paths instanceof Set ? selection.paths : selection;
   const types = selection.types instanceof Set ? selection.types : null;
+  const includeUnanalyzed = selection.includeUnanalyzed !== false;
   return files.filter((f) => {
     const slash = f.path.indexOf("/");
     const top = slash < 0 ? f.path : f.path.slice(0, slash);
     if (!paths.has(top)) return false;
     if (types && !types.has(groupKeyForPath(f.path))) return false;
+    if (!includeUnanalyzed && !isAnalyzable(f.path)) return false;
     return true;
   });
 }

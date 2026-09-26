@@ -3,9 +3,9 @@ import { formatSize } from "@core/format.js";
 import { kindOf } from "@api/project-map.js";
 
 const TYPE_GROUPS = [
-  { key: "cs", label: "C#", hint: ".cs", matches: ["cs"] },
-  { key: "js", label: "JavaScript", hint: ".js .ts .mjs", matches: ["js"] },
-  { key: "other", label: "Остальные", hint: "css, html, md, json, ...", matches: ["css", "html", "md", "json", "other"] },
+  { key: "cs", exts: ".cs", matches: ["cs"] },
+  { key: "js", exts: ".js .mjs .cjs .ts .jsx .tsx", matches: ["js"] },
+  { key: "other", exts: ".css .html .md .json .txt и др.", matches: ["css", "html", "md", "json", "other"] },
 ];
 
 function groupKeyForFile(path) {
@@ -20,6 +20,7 @@ export function initMapSelectModal() {
   const modal = $("map-select-modal");
   const list = $("map-select-list");
   const typeList = $("map-type-list");
+  const includeUnanalyzedBox = $("map-include-unanalyzed");
   const closeBtn = $("map-select-close");
   const allBtn = $("map-select-all");
   const noneBtn = $("map-select-none");
@@ -60,10 +61,9 @@ export function initMapSelectModal() {
         updateOkState();
       });
 
-      const wrap = el("label", { class: "map-type-item" }, [
+      const wrap = el("li", { class: "map-type-item" }, [
         cb,
-        el("span", { text: g.label }),
-        el("span", { class: "meta", text: g.hint }),
+        el("span", { class: "ext", text: g.exts }),
       ]);
       if (cb.checked) wrap.classList.add("checked");
       wrap.addEventListener("click", (e) => {
@@ -123,7 +123,8 @@ export function initMapSelectModal() {
   });
   if (okBtn) okBtn.addEventListener("click", () => {
     if (!selected.size || !selectedTypes.size) return;
-    close({ paths: new Set(selected), types: new Set(selectedTypes) });
+    const includeUnanalyzed = includeUnanalyzedBox ? includeUnanalyzedBox.checked : true;
+    close({ paths: new Set(selected), types: new Set(selectedTypes), includeUnanalyzed });
   });
 
   return {
@@ -133,6 +134,7 @@ export function initMapSelectModal() {
         allFiles = files || [];
         selected = new Set(topItems.map((i) => i.name));
         selectedTypes = new Set(TYPE_GROUPS.map((g) => g.key));
+        if (includeUnanalyzedBox) includeUnanalyzedBox.checked = false;
         resolver = resolve;
         renderTypes();
         renderPaths();
