@@ -334,28 +334,30 @@
 
   <!-- Модалка выбора файлов для карты проекта -->
   <div id="map-select-modal" class="modal hidden">
-    <div class="modal-content">
+    <div class="modal-content map-select-content">
       <div class="modal-head">
         <h3>Что включить в карту</h3>
         <button id="map-select-close" class="icon-btn" title="Закрыть">✕</button>
       </div>
 
-      <div class="map-select-section">
-        <div class="map-select-section-title">Типы файлов</div>
-        <div id="map-type-list" class="map-type-list"></div>
-      </div>
+      <div class="map-select-scroll">
+        <div class="map-select-section">
+          <div class="map-select-section-title">Типы файлов</div>
+          <div id="map-type-list" class="map-type-list"></div>
+        </div>
 
-      <div class="map-select-section">
-        <div class="map-select-section-title">Пути</div>
-        <ul id="map-select-list" class="map-select-list"></ul>
-      </div>
+        <div class="map-select-section">
+          <div class="map-select-section-title">Пути</div>
+          <ul id="map-select-list" class="map-select-list"></ul>
+        </div>
 
-      <div class="map-select-section">
-        <div class="map-select-section-title">Дополнительно</div>
-        <label class="map-extra-option">
-          <input type="checkbox" id="map-include-unanalyzed" class="checkbox">
-          <span>Добавлять неанализируемые файлы<br><small>css, html, md, json, txt и другие — будут перечислены без содержимого</small></span>
-        </label>
+        <div class="map-select-section">
+          <div class="map-select-section-title">Дополнительно</div>
+          <label class="map-extra-option">
+            <input type="checkbox" id="map-include-unanalyzed" class="checkbox">
+            <span>Добавлять неанализируемые файлы<br><small>css, html, md, json, txt и другие — будут перечислены без содержимого</small></span>
+          </label>
+        </div>
       </div>
 
       <div class="modal-actions">

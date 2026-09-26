@@ -1289,6 +1289,32 @@ body {
 /* ============================================================
    Модалка выбора для карты проекта
    ============================================================ */
+.map-select-content {
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+.map-select-content .modal-head {
+  flex-shrink: 0;
+}
+.map-select-content .modal-actions {
+  flex-shrink: 0;
+  padding-top: 8px;
+  border-top: 1px solid #333;
+}
+.map-select-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+
 .map-select-section {
   display: flex;
   flex-direction: column;
@@ -1374,9 +1400,9 @@ body {
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow-y: auto;
-  max-height: 50vh;
-  -webkit-overflow-scrolling: touch;
+  border: 1px solid #333;
+  border-radius: 6px;
+  overflow: hidden;
 }
 .map-select-list li {
   padding: 10px 12px;
