@@ -12,8 +12,11 @@ html, body {
   overscroll-behavior: none;
 }
 
+html { height: 100%; overflow: hidden; }
+
 body {
   height: var(--app-height, 100dvh);
+  transform: translateY(var(--app-top, 0));
 }
 
 body {
@@ -476,22 +479,18 @@ body {
    Полоса кнопок над клавиатурой (только тач)
    ============================================================ */
 .editor-keybar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 60;
   display: flex;
   gap: 2px;
   padding: 4px 6px;
+  padding-bottom: calc(4px + env(safe-area-inset-bottom));
   background: #2d2d2d;
   border-top: 1px solid #333;
   overflow-x: auto;
   overflow-y: hidden;
+  flex-shrink: 0;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   white-space: nowrap;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.4);
 }
 .editor-keybar::-webkit-scrollbar { display: none; }
 .editor-keybar button {

@@ -96,22 +96,7 @@ export function initEditorKeybar({ editorScreen }) {
     }, 100);
   });
 
-  // Обновление позиции при появлении/исчезновении клавиатуры
-  const vv = window.visualViewport;
-  if (vv) {
-    const reposition = () => {
-      // При position: fixed браузер уже учитывает visualViewport,
-      // но на Android иногда нужно пересчитать padding под home indicator.
-      const safe = window.innerHeight - (vv.offsetTop + vv.height);
-      if (safe > 0 && !bar.classList.contains("hidden")) {
-        bar.style.paddingBottom = "4px";
-      } else {
-        bar.style.paddingBottom = "";
-      }
-    };
-    vv.addEventListener("resize", reposition);
-    vv.addEventListener("scroll", reposition);
-  }
-
+  // Позиционирование не требуется: keybar — flex-элемент внизу
+  // #screen-editor, а body сжимается через --app-height из keyboard-viewport.
   return { show, hide };
 }
