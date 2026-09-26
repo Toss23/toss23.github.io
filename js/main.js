@@ -228,7 +228,20 @@ const editorScreen = initEditorScreen({
 });
 
 initEditorToolbar({ editorScreen });
-initEditorKeybar({ editorScreen });
+initEditorKeybar({
+  editorScreen,
+  onShow: () => {
+    console.log("[main] keybar onShow → nav скрыт");
+    nav.setVisible(false);
+  },
+  onHide: () => {
+    const s = getState().screen;
+    if (s === SCREENS.FILES || s === SCREENS.EDITOR || s === SCREENS.HISTORY || s === SCREENS.IMAGE) {
+      console.log("[main] keybar onHide → nav показан");
+      nav.setVisible(true);
+    }
+  },
+});
 
 const editorTabs = initEditorTabs({
   onSwitch: switchTab,
