@@ -45,11 +45,23 @@
   <section id="screen-auth" class="screen hidden">
     <div class="auth-inner">
       <h1>GitHub Client</h1>
-      <p class="hint">
-        Выберите .txt файл с вашим Personal Access Token
-        (<a href="https://github.com/settings/tokens/new?description=Mobile%20GitHub%20Client&scopes=repo" target="_blank" rel="noopener">создать</a>).
-      </p>
-      <button id="login-btn" class="primary big">Войти</button>
+
+      <div class="auth-instruction">
+        <p>Нужен <b>Personal Access Token</b> со scope <code>repo</code>.</p>
+        <p><a href="https://github.com/settings/tokens/new?description=Mobile%20GitHub%20Client&scopes=repo" target="_blank" rel="noopener">Создать токен на GitHub →</a></p>
+        <p class="auth-hint-small">Вставьте токен в поле ниже или выберите .txt файл с ним.</p>
+      </div>
+
+      <div class="auth-field">
+        <input id="token-input" type="password" placeholder="Вставьте токен сюда" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button id="token-toggle" class="icon-btn" type="button" title="Показать токен">👁</button>
+      </div>
+
+      <button id="login-btn" class="primary big" disabled>Войти</button>
+
+      <div class="auth-divider"><span>или</span></div>
+
+      <button id="login-from-file" class="icon-btn auth-file-btn">📄 Загрузить из .txt файла</button>
       <input id="token-file" type="file" accept=".txt,text/plain,application/octet-stream" class="visually-hidden">
     </div>
   </section>

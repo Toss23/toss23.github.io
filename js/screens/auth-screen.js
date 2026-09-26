@@ -2,46 +2,77 @@ import { $ } from "@core/dom.js";
 import { readTokenFromFile } from "@api/auth.js";
 
 export function initAuthScreen({ onToken }) {
-  const fileInput = $("token-file");
+  const tokenInput = $("token-input");
+  const tokenToggle = $("token-toggle");
   const loginBtn = $("login-btn");
+  const fromFileBtn = $("login-from-file");
+  const fileInput = $("token-file");
 
-  console.log("[auth-screen] init", {
-    fileInputFound: !!fileInput,
-    loginBtnFound: !!loginBtn,
-  });
-
-  if (!fileInput || !loginBtn) {
-    console.error("auth-screen: нет #token-file или #login-btn в HTML");
+  if (!tokenInput || !loginBtn || !fileInput) {
+    console.error("auth-screen: не найдены элементы (token-input, login-btn, token-file)");
     return;
   }
 
-  loginBtn.addEventListener("click", () => {
-    console.log("[auth-screen] login btn clicked");
-    try {
-      fileInput.value = "";
-      fileInput.click();
-      console.log("[auth-screen] fileInput.click() вызван");
-    } catch (e) {
-      console.error("[auth-screen] не удалось открыть диалог:", e);
+  function normalizeToken(raw) {
+    return String(raw || "").trim().replace(/\s+/g, "");
+  }
+
+  function refreshLoginState() {
+    const value = normalizeToken(tokenInput.value);
+    loginBtn.disabled = value.length < 10;
+  }
+
+  tokenInput.addEventListener("input", refreshLoginState);
+
+  tokenInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitInput();
     }
   });
 
+  if (tokenToggle) {
+    tokenToggle.addEventListener("click", () => {
+      const isPassword = tokenInput.type === "password";
+      tokenInput.type = isPassword ? "text" : "password";
+      tokenToggle.textContent = isPassword ? "🙈" : "👁";
+      tokenToggle.title = isPassword ? "Скрыть токен" : "Показать токен";
+    });
+  }
+
+  function submitInput() {
+    const token = normalizeToken(tokenInput.value);
+    if (token.length < 10) return;
+    onToken(token);
+  }
+
+  loginBtn.addEventListener("click", submitInput);
+
+  if (fromFileBtn && fileInput) {
+    fromFileBtn.addEventListener("click", () => {
+      fileInput.value = "";
+      fileInput.click();
+    });
+  }
+
   fileInput.addEventListener("change", async () => {
-    console.log("[auth-screen] change event, файлов:", fileInput.files?.length);
     const file = fileInput.files?.[0];
     if (!file) return;
     try {
-      const token = await readTokenFromFile(file);
+      const raw = await readTokenFromFile(file);
       fileInput.value = "";
+      const token = normalizeToken(raw);
       if (!token) {
         alert("Файл пустой или токен не распознан");
         return;
       }
-      console.log("[auth-screen] токен получен, длина:", token.length);
       onToken(token);
     } catch (e) {
       console.error("Не удалось прочитать файл", e);
       alert("Не удалось прочитать файл: " + e.message);
     }
   });
+
+  refreshLoginState();
+  setTimeout(() => tokenInput.focus(), 100);
 }

@@ -693,14 +693,98 @@ body {
   width: 100%;
   text-align: center;
 }
-.auth-inner h1 { font-size: 22px; margin: 0 0 12px; }
-.auth-inner .hint {
-  font-size: 13px;
-  color: #999;
-  line-height: 1.5;
-  margin-bottom: 24px;
-}
+.auth-inner h1 { font-size: 22px; margin: 0 0 16px; }
 .auth-inner a { color: #7db0f0; }
+
+.auth-instruction {
+  text-align: left;
+  background: #252526;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.auth-instruction p {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  color: #aaa;
+  line-height: 1.5;
+}
+.auth-instruction p:last-child { margin-bottom: 0; }
+.auth-instruction code {
+  background: #1e1e1e;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: #e2c08d;
+}
+.auth-hint-small { color: #888 !important; font-size: 11.5px !important; }
+
+.auth-field {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.auth-field input {
+  flex: 1;
+  min-width: 0;
+  background: #1e1e1e;
+  color: #ddd;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  outline: none;
+}
+.auth-field input:focus { border-color: #0e639c; }
+.auth-field .icon-btn {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 16px;
+  padding: 0;
+}
+
+#login-btn { margin-bottom: 14px; }
+#login-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.auth-divider {
+  position: relative;
+  text-align: center;
+  margin: 10px 0 12px;
+  font-size: 11px;
+  color: #666;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 42%;
+  height: 1px;
+  background: #333;
+}
+.auth-divider::before { left: 0; }
+.auth-divider::after { right: 0; }
+.auth-divider span {
+  background: #1e1e1e;
+  padding: 0 10px;
+  position: relative;
+  z-index: 1;
+}
+
+.auth-file-btn {
+  width: 100%;
+  min-height: 44px;
+  font-size: 13px;
+  color: #7db0f0;
+}
+.auth-file-btn:hover { background: #2a2d2e; }
 
 /* ============================================================
    Экран загрузки (boot)
