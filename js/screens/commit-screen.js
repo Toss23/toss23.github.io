@@ -1,7 +1,6 @@
 import { $, el, clear } from "@core/dom.js";
 import { UI } from "@core/config.js";
 import { computeLineDiff, renderDiffHtml } from "@core/diff.js";
-import { attachBackdropDismiss } from "@ui/modal-dismiss.js";
 
 export function initCommitScreen({ onSubmit, onCancel, onRevertAll }) {
   const modal = $("commit-modal");
@@ -26,11 +25,6 @@ export function initCommitScreen({ onSubmit, onCancel, onRevertAll }) {
   }
 
   cancelBtn.addEventListener("click", () => {
-    modal.classList.add("hidden");
-    onCancel?.();
-  });
-
-  attachBackdropDismiss(modal, () => {
     modal.classList.add("hidden");
     onCancel?.();
   });
@@ -61,7 +55,6 @@ export function initCommitScreen({ onSubmit, onCancel, onRevertAll }) {
           const d = computeLineDiff(baseText, currentText);
           parts = d.parts; added = d.added; removed = d.removed;
         } else {
-          // Новый файл
           const lines = (currentText || "").split("\n");
           if (lines[lines.length - 1] === "") lines.pop();
           parts = [{ added: true, value: (currentText || "") + "\n" }];
@@ -87,7 +80,15 @@ export function initCommitScreen({ onSubmit, onCancel, onRevertAll }) {
       }
 
       message.value = "";
-      revertAllBtn.classList.toggle("hidden", mode !== "local");
+
+      // Кнопка «Откатить всё» — только в local-режиме.
+      if (mode === "local") {
+        revertAllBtn.classList.remove("hidden");
+        revertAllBtn.disabled = false;
+      } else {
+        revertAllBtn.classList.add("hidden");
+      }
+
       modal.classList.remove("hidden");
       setTimeout(() => message.focus(), 50);
     },

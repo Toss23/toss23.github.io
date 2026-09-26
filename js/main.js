@@ -72,7 +72,7 @@ initFullscreen("fullscreen-btn");
 const progressBar = initProgressBar();
 const dialogs = initDialogs();
 
-const header = initHeader({ onLogout: logout });
+const header = initHeader({ onLogout: confirmLogout });
 const nav = initNav({ onExitRepo: exitRepo, onBack: goBack, onCommit: openCommit });
 initAuthScreen({ onToken: login });
 
@@ -222,7 +222,7 @@ if (btnAi) {
 const editorScreen = initEditorScreen({
   onStateChange: handleEditorState,
   onSave: saveFileToLocal,
-  onRevert: revertFile,
+  onRevert: confirmRevertFile,
   onAutosave: handleAutosave,
   onContextMenu: showEditorContextMenu,
 });
@@ -2626,6 +2626,67 @@ async function confirmDeleteSelected() {
 
 /* ---------- Откат ---------- */
 
+async function confirmRevertFile(path) {
+  const { files, deleted, mode } = getState();
+  const fileEntry = files.find((f) => f.path === path);
+  if (!fileEntry) return;
+
+  let title;
+  let text;
+
+  if (fileEntry.isNew) {
+    title = "Отменить создание файла?";
+    text = path + "\n\nФайл будет удалён из локальной копии. Если файл уже есть на GitHub — вернётся к серверной версии.";
+  } else if (deleted.has(path)) {
+    title = "Отменить удаление?";
+    text = path + "\n\nФайл вернётся к версии из GitHub.";
+  } else if (mode === "local") {
+    title = "Откатить изменения?";
+    text = path + "\n\nФайл вернётся к последней сохранённой версии. Несохранённые правки будут потеряны.";
+  } else {
+    title = "Откатить изменения?";
+    text = path + "\n\nФайл будет загружен заново с GitHub. Несохранённые правки будут потеряны.";
+  }
+
+  const ok = await dialogs.confirm({
+    title,
+    text,
+    okText: "Откатить",
+    cancelText: "Отмена",
+    danger: true,
+  });
+  if (!ok) return;
+
+  await revertFile(path);
+}
+
+async function confirmLogout() {
+  const { dirty, mode, clonedMap } = getState();
+  const clonedCount = clonedMap ? clonedMap.size : 0;
+  const dirtyCount = dirty ? dirty.size : 0;
+
+  let text = "Токен будет удалён из браузера. Войти заново потребуется снова.";
+
+  if (clonedCount > 0) {
+    text += "\n\nЛокальные копии (" + clonedCount + " шт.) останутся — их можно открыть после повторного входа.";
+  }
+
+  if (mode !== "local" && dirtyCount > 0) {
+    text += "\n\nВнимание: у вас " + dirtyCount + " несохранённых файлов в текущем репозитории. Они будут потеряны.";
+  }
+
+  const ok = await dialogs.confirm({
+    title: "Выйти из аккаунта?",
+    text,
+    okText: "Выйти",
+    cancelText: "Отмена",
+    danger: true,
+  });
+  if (!ok) return;
+
+  logout();
+}
+
 async function revertFile(path) {
   const { cloned, mode, files, octokit, repo, branch } = getState();
   const fileEntry = files.find((f) => f.path === path);
@@ -3255,7 +3316,18 @@ function initEditorSwipe() {
 
 async function confirmDiscard() {
   const { dirty, mode } = getState();
-  if (mode === "local") return true;
+
+  // В local-режиме сначала сохраняем всё из dirty в IndexedDB.
+  // Так правки не потеряются при выходе из репозитория или переключении.
+  if (mode === "local") {
+    try {
+      await flushDirtyToLocal();
+    } catch (e) {
+      console.warn("flush on discard:", e);
+    }
+    return true;
+  }
+
   if (dirty.size === 0) return true;
   return dialogs.confirm({
     title: "Есть несохранённые изменения",

@@ -1102,7 +1102,17 @@ body {
 .diff-line.add { background: rgba(108, 192, 108, 0.12); color: #b8e6b8; }
 .diff-line.rem { background: rgba(244, 135, 113, 0.10); color: #f0b0a0; }
 .diff-line.ctx { color: #888; }
-#commit-revert-all { margin-right: auto; }
+/* Кнопка «Откатить всё» — прижата влево, всегда видима в local */
+#commit-revert-all {
+  margin-right: auto;
+  background: #4a2a2a !important;
+  border-color: #6b3a3a !important;
+  color: #f0b0a0 !important;
+}
+#commit-revert-all:hover {
+  background: #5a3232 !important;
+}
+#commit-revert-all.hidden { display: none !important; }
 
 /* ============================================================
    История коммитов
