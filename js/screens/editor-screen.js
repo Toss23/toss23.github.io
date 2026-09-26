@@ -444,7 +444,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
     const modified = sha !== base.baseSha;
     const unsaved = current !== savedLf;
 
-    marker.classList.toggle("hidden", !modified);
+    if (marker) marker.classList.toggle("hidden", !modified);
     saveBtn.disabled = !unsaved;
     saveBtn.classList.toggle("active", unsaved);
     revertBtn.disabled = !(modified || unsaved);

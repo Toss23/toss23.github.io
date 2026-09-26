@@ -36,7 +36,6 @@ body {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  padding-top: calc(8px + env(safe-area-inset-top));
   background: #252526;
   border-bottom: 1px solid #333;
   flex-shrink: 0;
@@ -409,7 +408,8 @@ body {
 
 .editor-line-numbers {
   flex-shrink: 0;
-  width: 52px;
+  width: calc(4ch + 12px);
+  min-width: 24px;
   margin: 0;
   padding: 0;
   background: #2B2B2B;
@@ -429,7 +429,7 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  padding: 12px 8px 12px 0;
+  padding: 12px 6px 12px 0;
   white-space: pre;
   will-change: transform;
 }
