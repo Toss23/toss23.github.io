@@ -333,6 +333,11 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     getPath() {
       return base ? base.path : null;
     },
+    captureDirty() {
+      if (!base || !textarea) return null;
+      const current = textarea.value;
+      return { path: base.path, current, unsaved: current !== savedLf };
+    },
     getContent() {
       return textarea ? textarea.value : "";
     },

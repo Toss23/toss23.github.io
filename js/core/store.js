@@ -84,6 +84,8 @@ export function toggleSelection(path) {
   notify();
 }
 
+export function addTabSafe(tab) { addTab(tab); }
+
 export function addTab(tab) {
   if (!state.openTabs.some((t) => t.path === tab.path)) {
     state.openTabs.push(tab);

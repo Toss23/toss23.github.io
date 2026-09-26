@@ -4,6 +4,7 @@ import {
   setDeleted, removeDeleted, clearDeleted,
   setSelectionMode, toggleSelection,
   setRemoteChanges, clearRemoteChanges,
+  addTab, removeTab, setActiveTab, clearTabs,
 } from "@core/store.js";
 import { gitBlobSha, gitBlobShaFromBase64 } from "@core/git-sha.js";
 import { detectEol, toLf, fromLf, base64ToBytes, bytesToBase64 } from "@core/encoding.js";
@@ -36,6 +37,8 @@ import { initUpdateModal } from "@ui/update-modal.js";
 import { initAiModal } from "@ui/ai-modal.js";
 import { parseJson, checkChange, applyChange } from "@api/ai-patches.js";
 import { parseFile, renderProjectMap } from "@api/project-map.js";
+import { initEditorTabs } from "@ui/editor-tabs.js";
+import { initKeyboardViewport } from "@ui/keyboard-viewport.js";
 
 import { initAuthScreen } from "@screens/auth-screen.js";
 import { initReposScreen } from "@screens/repos-screen.js";
@@ -62,6 +65,7 @@ function isEmptyRepoError(e) {
 /* ---------- Инициализация ---------- */
 
 initStatus();
+initKeyboardViewport();
 initFullscreen("fullscreen-btn");
 const progressBar = initProgressBar();
 const dialogs = initDialogs();
@@ -213,6 +217,11 @@ const editorScreen = initEditorScreen({
 });
 
 initEditorToolbar({ editorScreen });
+
+const editorTabs = initEditorTabs({
+  onSwitch: switchTab,
+  onClose: closeTab,
+});
 const commitScreen = initCommitScreen({
   onSubmit: commit,
   onCancel: () => {},
@@ -382,6 +391,8 @@ async function exitRepo() {
   stopLocalWatch();
   await maybeAutoSave();
   if (!(await confirmDiscard())) return;
+  clearTabs();
+  renderTabs();
   editorScreen.close();
   setState({
     repo: null, branch: null, branches: [], files: [],
@@ -430,6 +441,8 @@ async function login(token) {
 function logout() {
   stopLocalWatch();
   clearToken();
+  clearTabs();
+  renderTabs();
   editorScreen.close();
   Object.assign(getState(), {
     octokit: null, user: null, repos: [], clonedMap: new Map(),
@@ -563,6 +576,8 @@ async function handleRepoSelect(repo) {
 async function openRepoRemote(repo) {
   stopLocalWatch();
   if (!(await confirmDiscard())) return;
+  clearTabs();
+  renderTabs();
   const { octokit } = getState();
 
   setState({
@@ -655,6 +670,8 @@ async function selectBranch(branch) {
   clearDirty();
   clearDeleted();
   clearRemoteChanges();
+  clearTabs();
+  renderTabs();
   setSelectionMode(false);
   editorScreen.close();
   await loadTree();
@@ -886,6 +903,56 @@ async function deleteLocalCopy(repo) {
   } finally {
     forceHideBusy();
     progressBar.hide();
+  }
+}
+
+/* ---------- Вкладки редактора ---------- */
+
+function renderTabs() {
+  const state = getState();
+  const dirty = new Set(state.dirty.keys());
+  for (const f of state.files) {
+    if (f.isNew) { dirty.add(f.path); continue; }
+    if (f.baseSha !== undefined && f.sha !== f.baseSha) dirty.add(f.path);
+  }
+  editorTabs.render(state.openTabs, state.activeTab, dirty);
+}
+
+async function switchTab(path) {
+  const state = getState();
+  if (!path || state.activeTab === path) return;
+  const file = state.files.find((f) => f.path === path);
+  if (!file) {
+    removeTab(path);
+    renderTabs();
+    return;
+  }
+  await openFile(file);
+}
+
+async function closeTab(path) {
+  const state = getState();
+  const wasActive = state.activeTab === path;
+
+  const captured = editorScreen.captureDirty?.();
+  if (captured && captured.path === path && captured.unsaved) {
+    setDirty(path, captured.current);
+  }
+
+  removeTab(path);
+  renderTabs();
+
+  if (wasActive) {
+    const after = getState();
+    if (after.openTabs.length) {
+      const last = after.openTabs[after.openTabs.length - 1];
+      await switchTab(last.path);
+    } else {
+      editorScreen.close();
+      setState({ openFile: null });
+      setScreen(SCREENS.FILES);
+      renderFiles();
+    }
   }
 }
 
@@ -2077,6 +2144,13 @@ async function openFile(file) {
     return openImage(file);
   }
 
+  // Сохраняем содержимое предыдущей вкладки, если есть несохранённые правки.
+  const prev = getState().openFile;
+  if (prev && prev.path !== file.path) {
+    const captured = editorScreen.captureDirty?.();
+    if (captured && captured.unsaved) setDirty(captured.path, captured.current);
+  }
+
   const { octokit, repo, branch, dirty, mode, cloned } = getState();
 
   let contentLf, baseSha, eol;
@@ -2120,6 +2194,8 @@ async function openFile(file) {
   setState({ openFile: { path: file.path } });
   editorScreen.open({ path: file.path, baseSha, eol, content: contentLf });
   editorScreen.setLocalMode(mode === "local");
+  addTab({ path: file.path });
+  renderTabs();
   setScreen(SCREENS.EDITOR);
 }
 
@@ -2127,6 +2203,7 @@ function handleEditorState(path, { unsaved, current }) {
   if (unsaved) setDirty(path, current);
   else removeDirty(path);
   if (getState().screen === SCREENS.FILES) renderFiles();
+  renderTabs();
 }
 
 /* ---------- Сохранение в локальную копию ---------- */
@@ -2999,6 +3076,7 @@ subscribe(() => {
 
 /* ---------- Старт ---------- */
 
+renderTabs();
 setScreen(SCREENS.AUTH);
 const savedToken = loadToken();
 if (savedToken) login(savedToken);
