@@ -55,6 +55,22 @@ export async function repoHasChanges(key) {
   return false;
 }
 
+/**
+ * Проверяет, есть ли в локальной копии незакоммиченные изменения.
+ * Сравнивает sha и baseSha у каждого файла, учитывает isNew и pendingDeletes.
+ */
+export async function repoHasChanges(key) {
+  const meta = await loadRepoMeta(key);
+  if (!meta) return false;
+  if ((meta.pendingDeletes || []).length > 0) return true;
+  const idx = await loadFilesIndex(key);
+  for (const f of idx) {
+    if (f.isNew) return true;
+    if (f.baseSha !== undefined && f.sha !== f.baseSha) return true;
+  }
+  return false;
+}
+
 /* ---------- Сохранение ---------- */
 
 export async function saveRepo(meta, files, { onProgress } = {}) {

@@ -47,22 +47,14 @@ export function initEditorKeybar({ editorScreen, isActive, onShow, onHide }) {
     editorScreen.focus?.();
   }
 
-  /* ---------- Касания: клик срабатывает только если палец не уехал ---------- */
+  /* Касания: клик только если палец не уехал */
 
   const TAP_MAX_MS = 600;
   const TAP_MAX_DIST = 10;
-
-  let startX = 0;
-  let startY = 0;
-  let startTime = 0;
-  let startBtn = null;
-  let scrolled = false;
+  let startX = 0, startY = 0, startTime = 0, startBtn = null, scrolled = false;
 
   bar.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) {
-      startBtn = null;
-      return;
-    }
+    if (e.touches.length !== 1) { startBtn = null; return; }
     startBtn = e.target.closest("button");
     if (!startBtn) return;
     startX = e.touches[0].clientX;
@@ -75,31 +67,22 @@ export function initEditorKeybar({ editorScreen, isActive, onShow, onHide }) {
     if (!startBtn) return;
     const dx = e.touches[0].clientX - startX;
     const dy = e.touches[0].clientY - startY;
-    if (Math.abs(dx) > TAP_MAX_DIST || Math.abs(dy) > TAP_MAX_DIST) {
-      scrolled = true;
-    }
+    if (Math.abs(dx) > TAP_MAX_DIST || Math.abs(dy) > TAP_MAX_DIST) scrolled = true;
   }, { passive: true });
 
   bar.addEventListener("touchend", (e) => {
     const btn = startBtn;
     startBtn = null;
     if (!btn || scrolled) return;
-    const dt = Date.now() - startTime;
-    if (dt > TAP_MAX_MS) return;
-    // Проверяем, что палец остался на той же кнопке
+    if (Date.now() - startTime > TAP_MAX_MS) return;
     const t = e.changedTouches[0];
     const el = document.elementFromPoint(t.clientX, t.clientY);
-    if (!el || !btn.contains(el) && el !== btn) return;
+    if (!el || (!btn.contains(el) && el !== btn)) return;
     e.preventDefault();
     handleButton(btn);
   }, { passive: false });
 
-  bar.addEventListener("touchcancel", () => {
-    startBtn = null;
-    scrolled = false;
-  }, { passive: true });
-
-  /* ---------- Мышь для теста на ПК ---------- */
+  bar.addEventListener("touchcancel", () => { startBtn = null; scrolled = false; }, { passive: true });
 
   bar.addEventListener("mousedown", (e) => {
     const btn = e.target.closest("button");
@@ -107,6 +90,29 @@ export function initEditorKeybar({ editorScreen, isActive, onShow, onHide }) {
     e.preventDefault();
     handleButton(btn);
   });
+
+  /* ---------- Baseline для определения клавиатуры ---------- */
+
+  const vv = window.visualViewport;
+  let baselineHeight = vv ? vv.height : window.innerHeight;
+  let baselineLocked = false;
+
+  // Через секунду после старта зафиксируем нормальную высоту.
+  setTimeout(() => {
+    if (vv) baselineHeight = Math.max(baselineHeight, vv.height);
+    else baselineHeight = Math.max(baselineHeight, window.innerHeight);
+    baselineLocked = true;
+    console.log("[keybar] baseline =", baselineHeight);
+  }, 1000);
+
+  function isKeyboardVisible() {
+    const focused = document.activeElement === textarea;
+    if (!vv) return focused;
+    const h = vv.height;
+    // Клавиатура открыта, если высота меньше 80% от baseline.
+    const shrunk = baselineLocked && h < baselineHeight * 0.8;
+    return focused && shrunk;
+  }
 
   /* ---------- Видимость ---------- */
 
@@ -127,29 +133,29 @@ export function initEditorKeybar({ editorScreen, isActive, onShow, onHide }) {
     onHide?.();
   }
 
-  function isKeyboardVisible() {
-    const vv = window.visualViewport;
-    if (!vv) return document.activeElement === textarea;
-    const innerH = window.innerHeight;
-    const vvH = vv.height;
-    return vvH < innerH * 0.78;
-  }
-
   function syncState() {
     if (isKeyboardVisible()) show();
     else hide();
   }
 
-  const vv = window.visualViewport;
   if (vv) {
     vv.addEventListener("resize", syncState);
     vv.addEventListener("scroll", syncState);
   }
-  window.addEventListener("orientationchange", () => setTimeout(syncState, 200));
-  textarea.addEventListener("focus", () => setTimeout(syncState, 60));
-  textarea.addEventListener("blur", () => setTimeout(syncState, 120));
-  document.addEventListener("focusin", () => setTimeout(syncState, 60), true);
-  document.addEventListener("focusout", () => setTimeout(syncState, 120), true);
+  window.addEventListener("orientationchange", () => {
+    // При повороте baseline пересчитается заново
+    baselineLocked = false;
+    setTimeout(() => {
+      if (vv) baselineHeight = vv.height;
+      else baselineHeight = window.innerHeight;
+      baselineLocked = true;
+      syncState();
+    }, 400);
+  });
+  textarea.addEventListener("focus", () => setTimeout(syncState, 100));
+  textarea.addEventListener("blur", () => setTimeout(syncState, 150));
+  document.addEventListener("focusin", () => setTimeout(syncState, 100), true);
+  document.addEventListener("focusout", () => setTimeout(syncState, 150), true);
   setInterval(syncState, 400);
 
   return { show, hide, sync: syncState };
