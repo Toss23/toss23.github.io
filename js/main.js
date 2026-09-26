@@ -38,6 +38,7 @@ import { initAiModal } from "@ui/ai-modal.js";
 import { parseJson, checkChange, applyChange } from "@api/ai-patches.js";
 import { parseFile, renderProjectMap } from "@api/project-map.js";
 import { initEditorTabs } from "@ui/editor-tabs.js";
+import { initEditorKeybar } from "@ui/editor-keybar.js";
 import { initKeyboardViewport } from "@ui/keyboard-viewport.js";
 
 import { initAuthScreen } from "@screens/auth-screen.js";
@@ -214,9 +215,12 @@ const editorScreen = initEditorScreen({
   onStateChange: handleEditorState,
   onSave: saveFileToLocal,
   onRevert: revertFile,
+  onAutosave: handleAutosave,
+  onContextMenu: showEditorContextMenu,
 });
 
 initEditorToolbar({ editorScreen });
+initEditorKeybar({ editorScreen });
 
 const editorTabs = initEditorTabs({
   onSwitch: switchTab,
@@ -1185,6 +1189,109 @@ function askReplace(path) {
       onDismiss: () => resolve("cancel"),
     });
   });
+}
+
+/* ---------- Автосохранение ---------- */
+
+function handleAutosave(path, contentLf) {
+  const { mode, cloned, dirty } = getState();
+  if (mode !== "local" || !cloned) return;
+  if (!dirty.has(path)) return;
+  saveFileToLocal(path, contentLf).then(() => {
+    setStatus("Автосохранение");
+  }).catch((e) => {
+    console.warn("autosave:", e);
+  });
+}
+
+/* ---------- Контекстное меню редактора ---------- */
+
+async function showEditorContextMenu() {
+  const textarea = document.getElementById("file-content");
+  if (!textarea) return;
+  const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
+
+  const options = [];
+  if (hasSelection) {
+    options.push({ text: "📋 Копировать", onClick: () => editorCopy(textarea) });
+    options.push({ text: "✂️ Вырезать", onClick: () => editorCut(textarea) });
+  }
+  options.push({ text: "📋 Вставить", onClick: () => editorPaste(textarea) });
+  options.push({ text: "🔍 Найти", onClick: () => editorFindSelection(textarea) });
+  options.push({ text: "✅ Выделить всё", onClick: () => {
+    textarea.focus();
+    textarea.setSelectionRange(0, textarea.value.length);
+  }});
+  options.push({ text: "Отмена", onClick: () => {} });
+
+  dialogs.choose({ title: "Действия", options });
+}
+
+async function editorCopy(textarea) {
+  const text = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+  if (!text) return;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      textarea.focus();
+      document.execCommand("copy");
+    }
+    setStatus("Скопировано");
+  } catch (e) {
+    setStatus("Не удалось скопировать", true);
+  }
+}
+
+async function editorCut(textarea) {
+  const text = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+  if (!text) return;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      textarea.focus();
+      document.execCommand("copy");
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    textarea.setRangeText("", start, end, "end");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    setStatus("Вырезано");
+  } catch (e) {
+    setStatus("Не удалось вырезать", true);
+  }
+}
+
+async function editorPaste(textarea) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      const text = await navigator.clipboard.readText();
+      if (!text) { setStatus("Буфер пуст"); return; }
+      textarea.focus();
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.setRangeText(text, start, end, "end");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      setStatus("Вставлено");
+    } else {
+      setStatus("Вставка недоступна, используйте Ctrl+V", true);
+    }
+  } catch (e) {
+    setStatus("Нет доступа к буферу обмена", true);
+  }
+}
+
+function editorFindSelection(textarea) {
+  const text = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+  const findBtn = document.getElementById("btn-editor-find");
+  if (findBtn) findBtn.click();
+  const input = document.getElementById("editor-find-input");
+  if (input) {
+    input.value = text;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus();
+  }
 }
 
 /* ---------- AI-патчи ---------- */
@@ -3043,6 +3150,52 @@ async function commit(message) {
   }
 }
 
+/* ---------- Свайпы между вкладками ---------- */
+
+function initEditorSwipe() {
+  const screenEl = document.getElementById("screen-editor");
+  if (!screenEl) return;
+
+  let startX = 0, startY = 0, startTime = 0, tracking = false;
+
+  screenEl.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.target;
+    if (t.closest("#file-content")) return;
+    if (t.closest("#editor-keybar")) return;
+    if (t.closest("#editor-find-panel")) return;
+    if (t.closest("input, textarea, select")) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    startTime = Date.now();
+    tracking = true;
+  }, { passive: true });
+
+  screenEl.addEventListener("touchend", (e) => {
+    if (!tracking) return;
+    tracking = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    const dt = Date.now() - startTime;
+    if (dt > 800) return;
+    if (Math.abs(dx) < 60) return;
+    if (Math.abs(dy) > Math.abs(dx) * 0.7) return;
+
+    const state = getState();
+    const tabs = state.openTabs;
+    if (tabs.length < 2) return;
+    const idx = tabs.findIndex((tab) => tab.path === state.activeTab);
+    if (idx < 0) return;
+
+    let nextIdx;
+    if (dx < 0) nextIdx = (idx + 1) % tabs.length;
+    else nextIdx = (idx - 1 + tabs.length) % tabs.length;
+
+    switchTab(tabs[nextIdx].path);
+  }, { passive: true });
+}
+
 /* ---------- Утилиты ---------- */
 
 async function confirmDiscard() {
@@ -3076,6 +3229,7 @@ subscribe(() => {
 
 /* ---------- Старт ---------- */
 
+initEditorSwipe();
 renderTabs();
 setScreen(SCREENS.AUTH);
 const savedToken = loadToken();

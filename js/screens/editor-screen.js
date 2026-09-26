@@ -14,11 +14,13 @@ const INDENT_SIZE = 4;
 const INDENT_UNIT = " ".repeat(INDENT_SIZE);
 const HISTORY_LIMIT = 200;
 const HISTORY_MERGE_MS = 400;
+const AUTOSAVE_DELAY = 3000;
 
-export function initEditorScreen({ onStateChange, onSave, onRevert }) {
+export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, onContextMenu }) {
   const textarea = $("file-content");
   const highlight = $("file-highlight");
   const codeEl = highlight ? highlight.querySelector("code") : null;
+  const lineInner = $("file-line-numbers-inner");
   const pathLabel = $("file-path");
   const marker = $("dirty-marker");
   const saveBtn = $("save-file");
@@ -33,8 +35,9 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   let checkTimer;
   let highlightTimer;
   let caretTimer;
+  let autosaveTimer;
 
-  /* ---------- История (undo/redo) ---------- */
+  /* ---------- История ---------- */
 
   let undoStack = [];
   let redoStack = [];
@@ -61,7 +64,6 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     const state = snapState();
     const last = undoStack[undoStack.length - 1];
     if (last && last.text === state.text && last.ss === state.ss && last.se === state.se) return;
-
     const now = Date.now();
     if (!force && last && (now - lastSnapshotTime) < HISTORY_MERGE_MS) {
       undoStack[undoStack.length - 1] = state;
@@ -111,7 +113,15 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     return true;
   }
 
-  /* ---------- Подсветка ---------- */
+  /* ---------- Подсветка и номера строк ---------- */
+
+  function renderLineNumbers() {
+    if (!lineInner || !textarea) return;
+    const total = textarea.value.split("\n").length;
+    const arr = new Array(total);
+    for (let i = 0; i < total; i++) arr[i] = String(i + 1);
+    lineInner.textContent = arr.join("\n");
+  }
 
   function renderHighlight() {
     if (!codeEl || !textarea) return;
@@ -133,6 +143,10 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       highlight.scrollTop = textarea.scrollTop;
       highlight.scrollLeft = textarea.scrollLeft;
     }
+    if (lineInner) {
+      lineInner.style.transform = "translateY(" + (-textarea.scrollTop) + "px)";
+    }
+    renderLineNumbers();
   }
 
   function scheduleHighlight() {
@@ -145,12 +159,22 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     caretTimer = setTimeout(renderHighlight, 40);
   }
 
-  /* ---------- Вставка ---------- */
+  /* ---------- Правки ---------- */
+
+  function scheduleAutosave() {
+    if (!base || !onAutosave) return;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => {
+      if (!base || !textarea) return;
+      onAutosave(base.path, textarea.value);
+    }, AUTOSAVE_DELAY);
+  }
 
   function afterEdit() {
     scheduleHighlight();
     clearTimeout(checkTimer);
     checkTimer = setTimeout(check, 200);
+    scheduleAutosave();
   }
 
   function insertText(text, selectStart, selectEnd) {
@@ -187,22 +211,14 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     const text = textarea.value;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-
-    if (start === end) {
-      insertText(INDENT_UNIT);
-      return;
-    }
-
+    if (start === end) { insertText(INDENT_UNIT); return; }
     const lineStart = text.lastIndexOf("\n", start - 1) + 1;
     let lineEnd = text.indexOf("\n", end);
     if (lineEnd === -1) lineEnd = text.length;
-
     const chunk = text.slice(lineStart, lineEnd);
     const lines = chunk.split("\n");
-    const newLines = lines.map((l) => l.length ? INDENT_UNIT + l : l);
-    const newChunk = newLines.join("\n");
+    const newChunk = lines.map((l) => l.length ? INDENT_UNIT + l : l).join("\n");
     const inserted = newChunk.length - chunk.length;
-
     textarea.setRangeText(newChunk, lineStart, lineEnd, "end");
     textarea.setSelectionRange(start + INDENT_UNIT.length, end + inserted);
     takeSnapshot(true);
@@ -213,16 +229,13 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     const text = textarea.value;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-
     const lineStart = text.lastIndexOf("\n", start - 1) + 1;
     let lineEnd = text.indexOf("\n", end);
     if (lineEnd === -1) lineEnd = text.length;
-
     const chunk = text.slice(lineStart, lineEnd);
     const lines = chunk.split("\n");
     let removedTotal = 0;
     let firstLineRemoved = 0;
-
     const newLines = lines.map((l, idx) => {
       const m = l.match(/^[ \t]+/);
       if (!m) return l;
@@ -232,7 +245,6 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       return l.slice(take);
     });
     const newChunk = newLines.join("\n");
-
     textarea.setRangeText(newChunk, lineStart, lineEnd, "end");
     const newStart = Math.max(lineStart, start - firstLineRemoved);
     const newEnd = Math.max(newStart, end - removedTotal);
@@ -246,24 +258,14 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   function handleKeydown(e) {
     if (!textarea || textarea.disabled || !base) return;
 
-    // Ctrl/Cmd — обрабатываем undo/redo, остальное пропускаем
     if (e.ctrlKey || e.metaKey) {
       const k = (e.key || "").toLowerCase();
-      if (k === "z" && !e.shiftKey) {
-        e.preventDefault();
-        doUndo();
-        return;
-      }
-      if ((k === "z" && e.shiftKey) || k === "y") {
-        e.preventDefault();
-        doRedo();
-        return;
-      }
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
+      if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); doRedo(); return; }
       return;
     }
     if (e.altKey) return;
 
-    // Tab / Shift+Tab
     if (e.key === "Tab") {
       e.preventDefault();
       if (e.shiftKey) removeIndent();
@@ -271,7 +273,6 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       return;
     }
 
-    // Enter — автоотступ / автозакрытие блока
     if (e.key === "Enter" && !e.shiftKey) {
       const { indent, beforeCaret, afterCaret } = currentLineInfo();
       const trimmedEnd = beforeCaret.replace(/[ \t]+$/, "");
@@ -281,14 +282,12 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
         e.preventDefault();
         const nextIndent = indent + INDENT_UNIT;
         if (trimmedAfter.startsWith("}")) {
-          const insertion = "\n" + nextIndent + "\n" + indent;
-          insertText(insertion, 1 + nextIndent.length, 1 + nextIndent.length);
+          insertText("\n" + nextIndent + "\n" + indent, 1 + nextIndent.length, 1 + nextIndent.length);
         } else {
           insertText("\n" + nextIndent);
         }
         return;
       }
-
       if (trimmedAfter.startsWith("}")) {
         e.preventDefault();
         let baseIndent = indent;
@@ -296,16 +295,10 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
         insertText("\n" + baseIndent);
         return;
       }
-
-      if (indent) {
-        e.preventDefault();
-        insertText("\n" + indent);
-        return;
-      }
+      if (indent) { e.preventDefault(); insertText("\n" + indent); return; }
       return;
     }
 
-    // Автозакрытие скобок
     if (OPEN_TO_CLOSE[e.key]) {
       const text = textarea.value;
       const pos = textarea.selectionStart;
@@ -342,7 +335,6 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       return;
     }
 
-    // Прыжок через закрывающую
     if (CLOSE_CHARS.has(e.key)) {
       const text = textarea.value;
       const pos = textarea.selectionStart;
@@ -354,7 +346,6 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       }
     }
 
-    // Backspace внутри пустой пары — удалить обе скобки
     if (e.key === "Backspace") {
       const text = textarea.value;
       const pos = textarea.selectionStart;
@@ -371,7 +362,6 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       }
     }
 
-    // Автоотступ для одиночной закрывающей в начале строки
     if (e.key === "}") {
       const text = textarea.value;
       const pos = textarea.selectionStart;
@@ -398,18 +388,30 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     scheduleHighlight();
     clearTimeout(checkTimer);
     checkTimer = setTimeout(check, UI.DIRTY_DEBOUNCE_MS);
+    scheduleAutosave();
   });
 
   textarea.addEventListener("scroll", () => {
-    if (!highlight) return;
-    highlight.scrollTop = textarea.scrollTop;
-    highlight.scrollLeft = textarea.scrollLeft;
+    if (highlight) {
+      highlight.scrollTop = textarea.scrollTop;
+      highlight.scrollLeft = textarea.scrollLeft;
+    }
+    if (lineInner) {
+      lineInner.style.transform = "translateY(" + (-textarea.scrollTop) + "px)";
+    }
   });
 
   textarea.addEventListener("keyup", scheduleCaretHighlight);
   textarea.addEventListener("click", scheduleCaretHighlight);
   document.addEventListener("selectionchange", () => {
     if (document.activeElement === textarea) scheduleCaretHighlight();
+  });
+
+  textarea.addEventListener("contextmenu", (e) => {
+    if (typeof onContextMenu === "function") {
+      e.preventDefault();
+      onContextMenu();
+    }
   });
 
   saveBtn.addEventListener("click", () => {
@@ -442,6 +444,8 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     if (!textarea) return;
     textarea.value = text;
     textarea.disabled = !!disabled;
+    textarea.scrollTop = 0;
+    textarea.scrollLeft = 0;
     renderHighlight();
   }
 
@@ -459,6 +463,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     close() {
       base = null;
       savedLf = null;
+      clearTimeout(autosaveTimer);
       if (pathLabel) pathLabel.textContent = "";
       setContent("", true);
       undoStack = [];
@@ -497,6 +502,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     showBinaryNotice(path, sizeText) {
       base = null;
       savedLf = null;
+      clearTimeout(autosaveTimer);
       if (pathLabel) pathLabel.textContent = path;
       setContent("\uD83D\uDCE6 Бинарный файл — " + sizeText + "\n\nПросмотр и редактирование недоступны.", true);
       if (marker) marker.classList.add("hidden");
@@ -504,17 +510,67 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       saveBtn.classList.remove("active");
       revertBtn.disabled = true;
     },
-    getPath() {
-      return base ? base.path : null;
-    },
-    getContent() {
-      return textarea ? textarea.value : "";
+    getPath() { return base ? base.path : null; },
+    getContent() { return textarea ? textarea.value : ""; },
+    getSelection() {
+      if (!textarea) return "";
+      return textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
     },
     setContent(text) {
       if (!textarea) return;
       textarea.value = text;
       takeSnapshot(true);
       afterEdit();
+    },
+    insertAtCursor(text) {
+      if (!textarea || !base) return;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.setRangeText(text, start, end, "end");
+      takeSnapshot(true);
+      afterEdit();
+    },
+    moveCursor(dir) {
+      if (!textarea) return;
+      const text = textarea.value;
+      let pos = textarea.selectionStart;
+      if (dir === "left") pos = Math.max(0, pos - 1);
+      else if (dir === "right") pos = Math.min(text.length, pos + 1);
+      else if (dir === "up") {
+        const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
+        const col = pos - lineStart;
+        if (lineStart > 0) {
+          const prevLineEnd = lineStart - 1;
+          const prevLineStart = text.lastIndexOf("\n", prevLineEnd - 1) + 1;
+          const prevLineLen = prevLineEnd - prevLineStart;
+          pos = prevLineStart + Math.min(col, prevLineLen);
+        }
+      } else if (dir === "down") {
+        const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
+        const col = pos - lineStart;
+        const lineEnd = text.indexOf("\n", pos);
+        if (lineEnd !== -1) {
+          const nextLineStart = lineEnd + 1;
+          const nextLineEnd = text.indexOf("\n", nextLineStart);
+          const nextLineLen = (nextLineEnd === -1 ? text.length : nextLineEnd) - nextLineStart;
+          pos = nextLineStart + Math.min(col, nextLineLen);
+        }
+      }
+      textarea.setSelectionRange(pos, pos);
+      scheduleCaretHighlight();
+      textarea.focus();
+    },
+    indent() { if (base) applyIndent(); },
+    unindent() { if (base) removeIndent(); },
+    undo() { return doUndo(); },
+    redo() { return doRedo(); },
+    canUndo() { return undoStack.length > 1; },
+    canRedo() { return redoStack.length > 0; },
+    onHistoryChange(cb) {
+      if (typeof cb !== "function") return () => {};
+      historyListeners.add(cb);
+      cb();
+      return () => historyListeners.delete(cb);
     },
     selectRange(start, end) {
       if (!textarea) return;
@@ -526,24 +582,13 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       const target = Math.max(0, line * lineHeight - textarea.clientHeight / 2 + lineHeight);
       textarea.scrollTop = target;
       if (highlight) highlight.scrollTop = textarea.scrollTop;
+      if (lineInner) lineInner.style.transform = "translateY(" + (-textarea.scrollTop) + "px)";
     },
     captureDirty() {
       if (!base || !textarea) return null;
       const current = textarea.value;
       return { path: base.path, current, unsaved: current !== savedLf };
     },
-    undo() { return doUndo(); },
-    redo() { return doRedo(); },
-    canUndo() { return undoStack.length > 1; },
-    canRedo() { return redoStack.length > 0; },
-    onHistoryChange(cb) {
-      if (typeof cb !== "function") return () => {};
-      historyListeners.add(cb);
-      cb();
-      return () => historyListeners.delete(cb);
-    },
-    focus() {
-      if (textarea) textarea.focus();
-    },
+    focus() { if (textarea) textarea.focus(); },
   };
 }

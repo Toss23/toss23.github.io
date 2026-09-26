@@ -128,9 +128,13 @@
     </div>
 
     <div id="file-editor" class="editor-wrapper">
-      <pre id="file-highlight" class="editor-highlight" aria-hidden="true"><code></code></pre>
-      <textarea id="file-content" disabled spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" wrap="off"></textarea>
+      <pre id="file-line-numbers" class="editor-line-numbers" aria-hidden="true"><div id="file-line-numbers-inner" class="editor-line-numbers-inner"></div></pre>
+      <div class="editor-scroll">
+        <pre id="file-highlight" class="editor-highlight" aria-hidden="true"><code></code></pre>
+        <textarea id="file-content" disabled spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" wrap="off"></textarea>
+      </div>
     </div>
+    <div id="editor-keybar" class="editor-keybar hidden"></div>
   </section>
 
   <!-- Экран истории коммитов -->

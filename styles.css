@@ -377,7 +377,44 @@ body {
   position: relative;
   overflow: hidden;
   background: #2B2B2B;
+  display: flex;
+  flex-direction: row;
 }
+
+.editor-line-numbers {
+  flex-shrink: 0;
+  width: 52px;
+  margin: 0;
+  padding: 0;
+  background: #2B2B2B;
+  border-right: 1px solid #333;
+  overflow: hidden;
+  position: relative;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: var(--editor-font-size, 14px);
+  line-height: 1.55;
+  color: #606366;
+  text-align: right;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.editor-line-numbers-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 8px 12px 0;
+  white-space: pre;
+  will-change: transform;
+}
+
+.editor-scroll {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}
+
 #file-editor .editor-highlight,
 #file-editor #file-content {
   position: absolute;
@@ -425,6 +462,51 @@ body {
   scrollbar-width: none;
 }
 #file-editor .editor-highlight::-webkit-scrollbar { display: none; }
+
+/* ============================================================
+   Полоса кнопок над клавиатурой (только тач)
+   ============================================================ */
+.editor-keybar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 6px;
+  padding-bottom: calc(4px + env(safe-area-inset-bottom));
+  background: #2d2d2d;
+  border-top: 1px solid #333;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  white-space: nowrap;
+}
+.editor-keybar::-webkit-scrollbar { display: none; }
+.editor-keybar button {
+  flex-shrink: 0;
+  background: #3c3c3c;
+  border: 1px solid #4a4a4a;
+  color: #ddd;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 15px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  cursor: pointer;
+  min-width: 40px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.editor-keybar button:active { background: #4a4a4a; }
+.editor-keybar button.wide {
+  min-width: 56px;
+  padding: 8px 14px;
+  font-size: 12px;
+}
 
 /* Подсветка парных скобок */
 .tok-bracket-match {
