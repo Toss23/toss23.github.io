@@ -11,6 +11,9 @@ function isCSharpPath(path) {
 const OPEN_TO_CLOSE = { "(": ")", "[": "]", "{": "}", "\"": "\"", "'": "'" };
 const CLOSE_CHARS = new Set([")", "]", "}", "\"", "'"]);
 const INDENT_SIZE = 4;
+const INDENT_UNIT = " ".repeat(INDENT_SIZE);
+const HISTORY_LIMIT = 200;
+const HISTORY_MERGE_MS = 400;
 
 export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   const textarea = $("file-content");
@@ -31,6 +34,72 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   let highlightTimer;
   let caretTimer;
 
+  /* ---------- История (undo/redo) ---------- */
+
+  let undoStack = [];
+  let redoStack = [];
+  let lastSnapshotTime = 0;
+  let historySuspend = false;
+
+  function snapState() {
+    return {
+      text: textarea.value,
+      ss: textarea.selectionStart,
+      se: textarea.selectionEnd,
+    };
+  }
+
+  function takeSnapshot(force) {
+    if (!textarea || historySuspend) return;
+    const state = snapState();
+    const last = undoStack[undoStack.length - 1];
+    if (last && last.text === state.text && last.ss === state.ss && last.se === state.se) return;
+
+    const now = Date.now();
+    if (!force && last && (now - lastSnapshotTime) < HISTORY_MERGE_MS) {
+      undoStack[undoStack.length - 1] = state;
+    } else {
+      undoStack.push(state);
+    }
+    lastSnapshotTime = now;
+    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    redoStack.length = 0;
+  }
+
+  function resetHistory() {
+    undoStack = [];
+    redoStack = [];
+    lastSnapshotTime = 0;
+    if (textarea) undoStack.push(snapState());
+  }
+
+  function applyState(state) {
+    historySuspend = true;
+    textarea.value = state.text;
+    try { textarea.setSelectionRange(state.ss, state.se); } catch {}
+    historySuspend = false;
+    scheduleHighlight();
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(check, 200);
+  }
+
+  function doUndo() {
+    if (undoStack.length <= 1) return false;
+    redoStack.push(snapState());
+    undoStack.pop();
+    const prev = undoStack[undoStack.length - 1];
+    applyState(prev);
+    return true;
+  }
+
+  function doRedo() {
+    if (redoStack.length === 0) return false;
+    undoStack.push(snapState());
+    const next = redoStack.pop();
+    applyState(next);
+    return true;
+  }
+
   /* ---------- Подсветка ---------- */
 
   function renderHighlight() {
@@ -39,20 +108,16 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     const pos = textarea.selectionStart || 0;
     const pair = findBracketPair(text, pos);
     const path = base ? base.path : "";
-
     try {
       if (isCSharpPath(path)) {
-        const tokens = tokenize(text);
-        codeEl.innerHTML = renderTokens(tokens, pair);
+        codeEl.innerHTML = renderTokens(tokenize(text), pair);
       } else {
-        // Не C# — только plain text + подсветка парных скобок.
         codeEl.innerHTML = renderPlain(text, pair);
       }
     } catch (e) {
       console.warn("highlight:", e);
       codeEl.textContent = text;
     }
-
     if (highlight) {
       highlight.scrollTop = textarea.scrollTop;
       highlight.scrollLeft = textarea.scrollLeft;
@@ -71,6 +136,12 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
 
   /* ---------- Вставка ---------- */
 
+  function afterEdit() {
+    scheduleHighlight();
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(check, 200);
+  }
+
   function insertText(text, selectStart, selectEnd) {
     if (!textarea) return;
     const start = textarea.selectionStart;
@@ -81,9 +152,8 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       const e = typeof selectEnd === "number" ? start + selectEnd : s;
       textarea.setSelectionRange(s, e);
     }
-    scheduleHighlight();
-    clearTimeout(checkTimer);
-    checkTimer = setTimeout(check, 200);
+    takeSnapshot(true);
+    afterEdit();
   }
 
   function currentLineInfo() {
@@ -100,45 +170,125 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     return { indent, beforeCaret, afterCaret, lineStart, lineEndPos };
   }
 
+  /* ---------- Tab / Shift+Tab ---------- */
+
+  function applyIndent() {
+    const text = textarea.value;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    if (start === end) {
+      insertText(INDENT_UNIT);
+      return;
+    }
+
+    const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+    let lineEnd = text.indexOf("\n", end);
+    if (lineEnd === -1) lineEnd = text.length;
+
+    const chunk = text.slice(lineStart, lineEnd);
+    const lines = chunk.split("\n");
+    const newLines = lines.map((l) => l.length ? INDENT_UNIT + l : l);
+    const newChunk = newLines.join("\n");
+    const inserted = newChunk.length - chunk.length;
+
+    textarea.setRangeText(newChunk, lineStart, lineEnd, "end");
+    textarea.setSelectionRange(start + INDENT_UNIT.length, end + inserted);
+    takeSnapshot(true);
+    afterEdit();
+  }
+
+  function removeIndent() {
+    const text = textarea.value;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+    let lineEnd = text.indexOf("\n", end);
+    if (lineEnd === -1) lineEnd = text.length;
+
+    const chunk = text.slice(lineStart, lineEnd);
+    const lines = chunk.split("\n");
+    let removedTotal = 0;
+    let firstLineRemoved = 0;
+
+    const newLines = lines.map((l, idx) => {
+      const m = l.match(/^[ \t]+/);
+      if (!m) return l;
+      const take = Math.min(m[0].length, INDENT_SIZE);
+      if (idx === 0) firstLineRemoved = take;
+      removedTotal += take;
+      return l.slice(take);
+    });
+    const newChunk = newLines.join("\n");
+
+    textarea.setRangeText(newChunk, lineStart, lineEnd, "end");
+    const newStart = Math.max(lineStart, start - firstLineRemoved);
+    const newEnd = Math.max(newStart, end - removedTotal);
+    textarea.setSelectionRange(newStart, newEnd);
+    takeSnapshot(true);
+    afterEdit();
+  }
+
   /* ---------- Обработка клавиш ---------- */
 
   function handleKeydown(e) {
     if (!textarea || textarea.disabled || !base) return;
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    // Ctrl/Cmd — обрабатываем undo/redo, остальное пропускаем
+    if (e.ctrlKey || e.metaKey) {
+      const k = (e.key || "").toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        doUndo();
+        return;
+      }
+      if ((k === "z" && e.shiftKey) || k === "y") {
+        e.preventDefault();
+        doRedo();
+        return;
+      }
+      return;
+    }
+    if (e.altKey) return;
+
+    // Tab / Shift+Tab
+    if (e.key === "Tab") {
+      e.preventDefault();
+      if (e.shiftKey) removeIndent();
+      else applyIndent();
+      return;
+    }
 
     // Enter — автоотступ / автозакрытие блока
     if (e.key === "Enter" && !e.shiftKey) {
       const { indent, beforeCaret, afterCaret } = currentLineInfo();
       const trimmedEnd = beforeCaret.replace(/[ \t]+$/, "");
+      const trimmedAfter = afterCaret.replace(/^[ \t]*/, "");
 
       if (trimmedEnd.endsWith("{")) {
         e.preventDefault();
-        const nextIndent = indent + " ".repeat(INDENT_SIZE);
-        const trimmedAfter = afterCaret.replace(/^[ \t]*/, "");
+        const nextIndent = indent + INDENT_UNIT;
         if (trimmedAfter.startsWith("}")) {
           const insertion = "\n" + nextIndent + "\n" + indent;
           insertText(insertion, 1 + nextIndent.length, 1 + nextIndent.length);
         } else {
-          const insertion = "\n" + nextIndent;
-          insertText(insertion);
+          insertText("\n" + nextIndent);
         }
         return;
       }
 
-      const trimmedAfter = afterCaret.replace(/^[ \t]*/, "");
       if (trimmedAfter.startsWith("}")) {
         e.preventDefault();
         let baseIndent = indent;
         if (baseIndent.length >= INDENT_SIZE) baseIndent = baseIndent.slice(0, -INDENT_SIZE);
-        const insertion = "\n" + baseIndent;
-        insertText(insertion);
+        insertText("\n" + baseIndent);
         return;
       }
 
       if (indent) {
         e.preventDefault();
-        const insertion = "\n" + indent;
-        insertText(insertion);
+        insertText("\n" + indent);
         return;
       }
       return;
@@ -149,8 +299,8 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       const text = textarea.value;
       const pos = textarea.selectionStart;
       const end = textarea.selectionEnd;
-
       const isQuote = e.key === "\"" || e.key === "'";
+
       if (isQuote) {
         const prevCh = pos > 0 ? text[pos - 1] : "";
         const nextCh = pos < text.length ? text[pos] : "";
@@ -168,9 +318,8 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
           e.preventDefault();
           textarea.setRangeText(e.key + nextCh, pos, pos + 1, "end");
           textarea.setSelectionRange(pos + 1, pos + 1);
-          scheduleHighlight();
-          clearTimeout(checkTimer);
-          checkTimer = setTimeout(check, 200);
+          takeSnapshot(true);
+          afterEdit();
           return;
         }
       }
@@ -204,15 +353,14 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
         if (OPEN_TO_CLOSE[leftCh] && OPEN_TO_CLOSE[leftCh] === rightCh) {
           e.preventDefault();
           textarea.setRangeText("", pos - 1, pos + 1, "end");
-          scheduleHighlight();
-          clearTimeout(checkTimer);
-          checkTimer = setTimeout(check, 200);
+          takeSnapshot(true);
+          afterEdit();
           return;
         }
       }
     }
 
-    // Автоотступ для одиночной закрывающей скобки в начале строки
+    // Автоотступ для одиночной закрывающей в начале строки
     if (e.key === "}") {
       const text = textarea.value;
       const pos = textarea.selectionStart;
@@ -222,11 +370,9 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
         e.preventDefault();
         let baseIndent = before;
         if (baseIndent.length >= INDENT_SIZE) baseIndent = baseIndent.slice(0, -INDENT_SIZE);
-        const insertion = baseIndent + "}";
-        textarea.setRangeText(insertion, lineStart, pos, "end");
-        scheduleHighlight();
-        clearTimeout(checkTimer);
-        checkTimer = setTimeout(check, 200);
+        textarea.setRangeText(baseIndent + "}", lineStart, pos, "end");
+        takeSnapshot(true);
+        afterEdit();
         return;
       }
     }
@@ -237,6 +383,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   textarea.addEventListener("keydown", handleKeydown);
 
   textarea.addEventListener("input", () => {
+    if (!historySuspend) takeSnapshot(false);
     scheduleHighlight();
     clearTimeout(checkTimer);
     checkTimer = setTimeout(check, UI.DIRTY_DEBOUNCE_MS);
@@ -293,6 +440,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       savedLf = content;
       if (pathLabel) pathLabel.textContent = path;
       setContent(content, false);
+      resetHistory();
       clearTimeout(checkTimer);
       check();
       if (focus) setTimeout(() => textarea.focus(), 50);
@@ -302,6 +450,8 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       savedLf = null;
       if (pathLabel) pathLabel.textContent = "";
       setContent("", true);
+      undoStack = [];
+      redoStack = [];
       if (marker) marker.classList.add("hidden");
       saveBtn.disabled = true;
       saveBtn.classList.remove("active");
@@ -321,6 +471,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       savedLf = content;
       base.baseSha = baseSha;
       setContent(content, false);
+      resetHistory();
       check();
     },
     updateBaseSha(newSha) {
@@ -345,20 +496,14 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     getPath() {
       return base ? base.path : null;
     },
-    captureDirty() {
-      if (!base || !textarea) return null;
-      const current = textarea.value;
-      return { path: base.path, current, unsaved: current !== savedLf };
-    },
     getContent() {
       return textarea ? textarea.value : "";
     },
     setContent(text) {
       if (!textarea) return;
       textarea.value = text;
-      scheduleHighlight();
-      clearTimeout(checkTimer);
-      checkTimer = setTimeout(check, 200);
+      takeSnapshot(true);
+      afterEdit();
     },
     selectRange(start, end) {
       if (!textarea) return;
@@ -370,6 +515,11 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       const target = Math.max(0, line * lineHeight - textarea.clientHeight / 2 + lineHeight);
       textarea.scrollTop = target;
       if (highlight) highlight.scrollTop = textarea.scrollTop;
+    },
+    captureDirty() {
+      if (!base || !textarea) return null;
+      const current = textarea.value;
+      return { path: base.path, current, unsaved: current !== savedLf };
     },
     focus() {
       if (textarea) textarea.focus();
