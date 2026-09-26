@@ -137,23 +137,25 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   }
 
   function insertAtTarget(text) {
+    // Одна буква при активном shift — после вставки возвращаем нижний регистр
+    // и перерисовываем клавиатуру, чтобы буквы стали строчными.
+    const isLetter = text.length === 1 && /[A-Za-zА-Яа-яЁё]/.test(text);
+    const willResetShift = shift && panel === "letters" && isLetter;
+
     const el = getTarget();
     if (el === textarea) {
-      if (shift && panel === "letters" && text.length === 1 && /[A-Za-zА-Яа-я]/.test(text)) {
-        shift = false;
-        updateShiftButton();
-      }
       editorScreen.insertAtCursor?.(text);
       if (document.activeElement !== textarea) textarea.focus();
-      return;
+    } else {
+      const s = el.selectionStart ?? el.value.length;
+      const e = el.selectionEnd ?? s;
+      el.setRangeText(text, s, e, "end");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
     }
-    const s = el.selectionStart ?? el.value.length;
-    const e = el.selectionEnd ?? s;
-    el.setRangeText(text, s, e, "end");
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    if (shift && text.length === 1 && /[A-Za-zА-Яа-я]/.test(text)) {
+
+    if (willResetShift) {
       shift = false;
-      updateShiftButton();
+      render();
     }
   }
 
@@ -173,7 +175,11 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   function handleKey(key) {
     if (typeof key === "string") { insertAtTarget(key); return; }
     switch (key.a) {
-      case "shift": shift = !shift; render(); break;
+      case "shift":
+        shift = !shift;
+        updateShiftButton();
+        render();
+        break;
       case "backspace": break;
       case "space": insertAtTarget(" "); break;
       case "enter": enterAtTarget(); break;
