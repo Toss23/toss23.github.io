@@ -1,9 +1,24 @@
 import { $ } from "@core/dom.js";
 import { getRows } from "@core/keyboard-layouts.js";
-import { subscribe } from "@core/store.js";
 
 const LANG_KEY = "kb_lang";
 const MODE_KEY = "kb_custom_enabled";
+
+const EXTRA_BUTTONS = [
+  { label: "⇥", action: "indent", title: "Таб" },
+  { label: "⇤", action: "unindent", title: "Убрать отступ" },
+  { label: ".", key: "." },
+  { label: ",", key: "," },
+  { label: "\"", key: "\"" },
+  { label: ";", key: ";" },
+  { label: "=", key: "=" },
+  { label: "{", key: "{" },
+  { label: "}", key: "}" },
+  { label: "(", key: "(" },
+  { label: ")", key: ")" },
+  { label: "[", key: "[" },
+  { label: "]", key: "]" },
+];
 
 function isTouchDevice() {
   if (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0) return true;
@@ -24,7 +39,7 @@ function saveEnabledPref(v) {
   try { localStorage.setItem(MODE_KEY, v ? "1" : "0"); } catch {}
 }
 
-export function initCustomKeyboard({ editorScreen, onShow, onHide }) {
+export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   const textarea = $("file-content");
   if (!textarea || !editorScreen) return null;
 
@@ -64,19 +79,21 @@ export function initCustomKeyboard({ editorScreen, onShow, onHide }) {
   function insert(text) {
     if (shift && panel === "letters" && text.length === 1 && /[A-Za-zА-Яа-я]/.test(text)) {
       shift = false;
+      updateShiftButton();
     }
     editorScreen.insertAtCursor?.(text);
-    editorScreen.focus?.();
-    if (panel === "letters") render();
+    if (document.activeElement !== textarea) textarea.focus();
   }
 
   function handleKey(key) {
     if (typeof key === "string") { insert(key); return; }
     switch (key.a) {
       case "shift": shift = !shift; render(); break;
-      case "backspace": editorScreen.backspace?.(); editorScreen.focus?.(); break;
+      case "backspace": editorScreen.backspace?.(); if (document.activeElement !== textarea) textarea.focus(); break;
       case "space": insert(" "); break;
-      case "enter": editorScreen.enterKey?.(); editorScreen.focus?.(); break;
+      case "enter": editorScreen.enterKey?.(); if (document.activeElement !== textarea) textarea.focus(); break;
+      case "indent": editorScreen.indent?.(); if (document.activeElement !== textarea) textarea.focus(); break;
+      case "unindent": editorScreen.unindent?.(); if (document.activeElement !== textarea) textarea.focus(); break;
       case "numbers": panel = "numbers"; shift = false; render(); break;
       case "symbols": panel = "symbols"; shift = false; render(); break;
       case "letters": panel = "letters"; shift = false; render(); break;
@@ -85,15 +102,7 @@ export function initCustomKeyboard({ editorScreen, onShow, onHide }) {
     }
   }
 
-  function makeKey(label, payload, opts = {}) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.tabIndex = -1;
-    btn.className = "kb-key";
-    if (opts.wide) btn.style.flex = String(opts.wide);
-    if (opts.special) btn.classList.add("special");
-    btn.textContent = label;
-
+  function attachHandlers(btn, payload) {
     btn.addEventListener("mousedown", (e) => {
       if (Date.now() - lastTouchTime < 600) return;
       e.preventDefault();
@@ -104,38 +113,69 @@ export function initCustomKeyboard({ editorScreen, onShow, onHide }) {
       e.preventDefault();
       handleKey(payload);
     }, { passive: false });
+    btn.addEventListener("click", (e) => e.preventDefault());
+  }
 
+  function makeKey(label, payload, opts = {}) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.tabIndex = -1;
+    btn.className = "kb-key";
+    if (opts.wide) btn.style.flex = String(opts.wide);
+    if (opts.special) btn.classList.add("special");
+    if (opts.action) btn.dataset.action = opts.action;
+    btn.textContent = label;
+    attachHandlers(btn, payload);
     return btn;
+  }
+
+  function updateShiftButton() {
+    const btn = container.querySelector('button[data-action="shift"]');
+    if (btn) btn.textContent = shift ? "⇪" : "⇧";
   }
 
   function render() {
     if (!container) return;
     container.innerHTML = "";
 
+    // Ряд дополнительных кнопок (табы, скобки, знаки).
+    const extra = document.createElement("div");
+    extra.className = "kb-row kb-extra-row";
+    for (const b of EXTRA_BUTTONS) {
+      const payload = b.action ? { a: b.action } : b.key;
+      extra.appendChild(makeKey(b.label, payload, {
+        special: true,
+        action: b.action,
+      }));
+    }
+    container.appendChild(extra);
+
+    // Основные буквенные/цифровые ряды.
     const rows = getRows(lang, panel, shift);
     for (const row of rows) {
       const rowEl = document.createElement("div");
       rowEl.className = "kb-row";
       for (const k of row) {
         const isObj = typeof k === "object";
-        rowEl.appendChild(makeKey(
-          isObj ? k.t : k,
-          isObj ? k : k,
-          { wide: isObj ? k.w : 1, special: isObj }
-        ));
+        const label = isObj ? k.t : k;
+        const payload = isObj ? k : k;
+        const opts = { wide: isObj ? k.w : 1, special: isObj };
+        if (isObj && k.a) opts.action = k.a;
+        rowEl.appendChild(makeKey(label, payload, opts));
       }
       container.appendChild(rowEl);
     }
 
+    // Нижний ряд.
     const bottom = document.createElement("div");
     bottom.className = "kb-row";
     const panelLabel = panel === "letters" ? "?123" : "ABC";
     const panelAction = panel === "letters" ? "numbers" : "letters";
-    bottom.appendChild(makeKey(panelLabel, { a: panelAction }, { wide: 1.5, special: true }));
-    bottom.appendChild(makeKey("🌐", { a: "lang" }, { wide: 1.5, special: true }));
-    bottom.appendChild(makeKey("⎵", { a: "space" }, { wide: 5, special: true }));
-    bottom.appendChild(makeKey("⌄", { a: "hide" }, { wide: 1.5, special: true }));
-    bottom.appendChild(makeKey("⏎", { a: "enter" }, { wide: 2, special: true }));
+    bottom.appendChild(makeKey(panelLabel, { a: panelAction }, { wide: 1.5, special: true, action: panelAction }));
+    bottom.appendChild(makeKey("🌐", { a: "lang" }, { wide: 1.5, special: true, action: "lang" }));
+    bottom.appendChild(makeKey("⎵", { a: "space" }, { wide: 5, special: true, action: "space" }));
+    bottom.appendChild(makeKey("⌄", { a: "hide" }, { wide: 1.5, special: true, action: "hide" }));
+    bottom.appendChild(makeKey("⏎", { a: "enter" }, { wide: 2, special: true, action: "enter" }));
     container.appendChild(bottom);
   }
 
@@ -145,15 +185,15 @@ export function initCustomKeyboard({ editorScreen, onShow, onHide }) {
     visible = true;
     container.classList.remove("hidden");
     render();
-    editorScreen.focus?.();
-    onShow?.();
+    if (document.activeElement !== textarea) textarea.focus();
+    onVisibilityChange?.(true);
   }
 
   function hide() {
     if (!visible) return;
     visible = false;
     container.classList.add("hidden");
-    onHide?.();
+    onVisibilityChange?.(false);
   }
 
   function setEnabled(v) {
@@ -167,10 +207,13 @@ export function initCustomKeyboard({ editorScreen, onShow, onHide }) {
 
   textarea.addEventListener("focus", () => show());
 
-  subscribe((state) => {
-    if (!enabled) return;
-    if (state.screen !== "editor" && visible) hide();
-  });
+  // Автоскрытие при уходе с экрана редактора.
+  // Делаем через setInterval — надёжнее, чем subscribe.
+  setInterval(() => {
+    if (!enabled || !visible) return;
+    const screen = document.getElementById("screen-editor");
+    if (!screen || screen.classList.contains("hidden")) hide();
+  }, 400);
 
   applyInputMode();
   render();

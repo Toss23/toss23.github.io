@@ -228,36 +228,12 @@ const editorScreen = initEditorScreen({
   onContextMenu: showEditorContextMenu,
 });
 
-let editorKeybarRef = null;
-
 const customKeyboard = initCustomKeyboard({
   editorScreen,
-  onShow: () => {
-    nav.setVisible(false);
-    if (editorKeybarRef) editorKeybarRef.hide();
-  },
-  onHide: () => {
-    const s = getState().screen;
-    if (s === SCREENS.FILES || s === SCREENS.EDITOR || s === SCREENS.HISTORY || s === SCREENS.IMAGE) {
-      nav.setVisible(true);
-    }
-  },
+  onVisibilityChange: () => refreshNav(),
 });
 
 initEditorToolbar({ editorScreen, customKeyboard });
-editorKeybarRef = initEditorKeybar({
-  editorScreen,
-  isSuppressed: () => !!customKeyboard && customKeyboard.isEnabled && customKeyboard.isEnabled(),
-  onShow: () => {
-    nav.setVisible(false);
-  },
-  onHide: () => {
-    const s = getState().screen;
-    if (s === SCREENS.FILES || s === SCREENS.EDITOR || s === SCREENS.HISTORY || s === SCREENS.IMAGE) {
-      nav.setVisible(true);
-    }
-  },
-});
 
 const editorTabs = initEditorTabs({
   onSwitch: switchTab,
@@ -375,18 +351,30 @@ const SCREEN_IDS = {
   [SCREENS.IMAGE]: "screen-image",
 };
 
+function refreshNav() {
+  const s = getState().screen;
+  const isAppScreen = s === SCREENS.FILES || s === SCREENS.EDITOR ||
+                      s === SCREENS.HISTORY || s === SCREENS.IMAGE;
+  if (!isAppScreen) {
+    nav.setVisible(false);
+    return;
+  }
+  // На экране редактора — скрыть nav, если кастомная клавиатура видна.
+  if (s === SCREENS.EDITOR && customKeyboard && customKeyboard.isVisible && customKeyboard.isVisible()) {
+    nav.setVisible(false);
+    return;
+  }
+  nav.setVisible(true);
+}
+
 function setScreen(name) {
   for (const [key, id] of Object.entries(SCREEN_IDS)) {
     document.getElementById(id).classList.toggle("hidden", key !== name);
   }
   document.getElementById("app-header").classList.toggle("hidden", name === SCREENS.AUTH);
-  nav.setVisible(
-    name === SCREENS.FILES ||
-    name === SCREENS.EDITOR ||
-    name === SCREENS.HISTORY ||
-    name === SCREENS.IMAGE
-  );
   setState({ screen: name });
+  // refreshNav вызывается после обновления state.
+  refreshNav();
 }
 
 /* ---------- Навигация ---------- */

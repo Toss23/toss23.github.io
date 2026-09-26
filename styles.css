@@ -1868,6 +1868,13 @@ html, body, .list, .move-list, .editor-highlight, .ai-body, .diff-box {
   justify-content: center;
 }
 
+/* Ряд дополнительных кнопок над основными клавишами */
+.kb-extra-row .kb-key {
+  font-size: 13px;
+  padding: 6px 3px;
+  min-height: 36px;
+}
+
 .kb-key {
   flex: 1;
   min-width: 0;
