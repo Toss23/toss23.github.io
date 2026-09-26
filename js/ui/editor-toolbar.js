@@ -6,6 +6,8 @@ const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 24;
 
 export function initEditorToolbar({ editorScreen }) {
+  const btnUndo = $("btn-editor-undo");
+  const btnRedo = $("btn-editor-redo");
   const btnFind = $("btn-editor-find");
   const btnReplace = $("btn-editor-replace");
   const btnSettings = $("btn-editor-settings");
@@ -135,6 +137,30 @@ export function initEditorToolbar({ editorScreen }) {
   }
 
   /* ---------- Подключения ---------- */
+
+  if (btnUndo) {
+    btnUndo.addEventListener("click", () => {
+      editorScreen.undo?.();
+      updateHistoryButtons();
+    });
+  }
+  if (btnRedo) {
+    btnRedo.addEventListener("click", () => {
+      editorScreen.redo?.();
+      updateHistoryButtons();
+    });
+  }
+
+  function updateHistoryButtons() {
+    if (btnUndo) btnUndo.disabled = !editorScreen.canUndo?.();
+    if (btnRedo) btnRedo.disabled = !editorScreen.canRedo?.();
+  }
+
+  if (editorScreen.onHistoryChange) {
+    editorScreen.onHistoryChange(updateHistoryButtons);
+  } else {
+    updateHistoryButtons();
+  }
 
   if (btnFind) btnFind.addEventListener("click", () => showPanel("find"));
   if (btnReplace) btnReplace.addEventListener("click", () => showPanel("replace"));

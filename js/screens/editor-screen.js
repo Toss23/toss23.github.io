@@ -40,6 +40,13 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
   let redoStack = [];
   let lastSnapshotTime = 0;
   let historySuspend = false;
+  const historyListeners = new Set();
+
+  function notifyHistory() {
+    for (const fn of historyListeners) {
+      try { fn(); } catch (e) { console.warn("history listener:", e); }
+    }
+  }
 
   function snapState() {
     return {
@@ -64,6 +71,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     lastSnapshotTime = now;
     if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
     redoStack.length = 0;
+    notifyHistory();
   }
 
   function resetHistory() {
@@ -71,6 +79,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     redoStack = [];
     lastSnapshotTime = 0;
     if (textarea) undoStack.push(snapState());
+    notifyHistory();
   }
 
   function applyState(state) {
@@ -89,6 +98,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     undoStack.pop();
     const prev = undoStack[undoStack.length - 1];
     applyState(prev);
+    notifyHistory();
     return true;
   }
 
@@ -97,6 +107,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
     undoStack.push(snapState());
     const next = redoStack.pop();
     applyState(next);
+    notifyHistory();
     return true;
   }
 
@@ -520,6 +531,16 @@ export function initEditorScreen({ onStateChange, onSave, onRevert }) {
       if (!base || !textarea) return null;
       const current = textarea.value;
       return { path: base.path, current, unsaved: current !== savedLf };
+    },
+    undo() { return doUndo(); },
+    redo() { return doRedo(); },
+    canUndo() { return undoStack.length > 1; },
+    canRedo() { return redoStack.length > 0; },
+    onHistoryChange(cb) {
+      if (typeof cb !== "function") return () => {};
+      historyListeners.add(cb);
+      cb();
+      return () => historyListeners.delete(cb);
     },
     focus() {
       if (textarea) textarea.focus();
