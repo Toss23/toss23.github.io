@@ -8,11 +8,17 @@ function ensure() {
   textEl = document.getElementById("busy-text");
 }
 
+// После каждой косой черты вставляем zero-width space, чтобы длинные пути
+// переносились по "/", а не обрезались.
+function wrapSlashes(text) {
+  return String(text == null ? "" : text).replace(/\//g, "/\u200B");
+}
+
 export function showBusy(text = "Загрузка…") {
   ensure();
   if (!overlay) return;
   currentToken = Symbol("busy");
-  if (textEl) textEl.textContent = text;
+  if (textEl) textEl.textContent = wrapSlashes(text);
   overlay.classList.remove("hidden");
   document.body.style.overflow = "hidden";
   return currentToken;
@@ -20,14 +26,13 @@ export function showBusy(text = "Загрузка…") {
 
 export function updateBusyText(text) {
   ensure();
-  if (!overlay || overlay.classList.contains("hidden")) return;
-  if (textEl) textEl.textContent = text;
+  if (!textEl) return;
+  textEl.textContent = wrapSlashes(text);
 }
 
 export function hideBusy(token = null) {
   ensure();
   if (!overlay) return;
-  // Если передан токен — скрываем только если он совпадает.
   if (token && currentToken && token !== currentToken) return;
   currentToken = null;
   overlay.classList.add("hidden");

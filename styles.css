@@ -1782,6 +1782,9 @@ body {
   text-align: center;
   max-width: 80vw;
   padding: 0 16px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
 }
 
 /* ============================================================
