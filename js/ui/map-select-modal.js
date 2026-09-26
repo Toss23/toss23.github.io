@@ -1,6 +1,6 @@
 import { $, el, clear } from "@core/dom.js";
 import { formatSize } from "@core/format.js";
-import { kindOf } from "@api/project-map.js";
+import { kindOf, hasServiceFolder } from "@api/project-map.js";
 
 const TYPE_GROUPS = [
   { key: "cs", exts: ".cs", matches: ["cs"] },
@@ -16,24 +16,59 @@ function groupKeyForFile(path) {
   return "other";
 }
 
+function computeTopLevel(files) {
+  const items = new Map();
+  for (const f of files) {
+    const slash = f.path.indexOf("/");
+    if (slash < 0) {
+      items.set(f.path, { name: f.path, isFolder: false, count: 1, bytes: f.size || 0 });
+    } else {
+      const top = f.path.slice(0, slash);
+      if (!items.has(top)) items.set(top, { name: top, isFolder: true, count: 0, bytes: 0 });
+      const it = items.get(top);
+      it.count++;
+      it.bytes += f.size || 0;
+    }
+  }
+  return [...items.values()].sort((a, b) => {
+    if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+// Если в корне найден только один «осмысленный» тип — выбираем только его,
+// иначе выбираем все.
+function pickDefaultTypes(files) {
+  const rootFiles = files.filter((f) => !f.path.includes("/"));
+  const groups = new Set();
+  for (const f of rootFiles) {
+    const g = groupKeyForFile(f.path);
+    if (g !== "other") groups.add(g);
+  }
+  if (groups.size === 1) return new Set(groups);
+  return new Set(TYPE_GROUPS.map((g) => g.key));
+}
+
 export function initMapSelectModal() {
   const modal = $("map-select-modal");
   const list = $("map-select-list");
   const typeList = $("map-type-list");
-  const includeUnanalyzedBox = $("map-include-unanalyzed");
   const closeBtn = $("map-select-close");
   const allBtn = $("map-select-all");
   const noneBtn = $("map-select-none");
   const cancelBtn = $("map-select-cancel");
   const okBtn = $("map-select-ok");
+  const includeUnanalyzedBox = $("map-include-unanalyzed");
+  const includeServiceBox = $("map-include-service");
 
   if (!modal || !list) return { ask: async () => null };
 
   let resolver = null;
+  let allFiles = [];
+  let visibleFiles = [];
   let items = [];
   let selected = new Set();
   let selectedTypes = new Set();
-  let allFiles = [];
 
   function close(result) {
     modal.classList.add("hidden");
@@ -45,6 +80,11 @@ export function initMapSelectModal() {
   function updateOkState() {
     if (!okBtn) return;
     okBtn.disabled = selected.size === 0 || selectedTypes.size === 0;
+  }
+
+  function visibleFromOptions() {
+    const includeService = includeServiceBox ? includeServiceBox.checked : false;
+    return includeService ? allFiles : allFiles.filter((f) => !hasServiceFolder(f.path));
   }
 
   function renderTypes() {
@@ -107,6 +147,15 @@ export function initMapSelectModal() {
     updateOkState();
   }
 
+  function recomputeFromOptions() {
+    visibleFiles = visibleFromOptions();
+    items = computeTopLevel(visibleFiles);
+    selected = new Set(items.map((i) => i.name));
+    selectedTypes = pickDefaultTypes(visibleFiles);
+    renderTypes();
+    renderPaths();
+  }
+
   if (closeBtn) closeBtn.addEventListener("click", () => close(null));
   if (cancelBtn) cancelBtn.addEventListener("click", () => close(null));
   if (allBtn) allBtn.addEventListener("click", () => {
@@ -124,20 +173,22 @@ export function initMapSelectModal() {
   if (okBtn) okBtn.addEventListener("click", () => {
     if (!selected.size || !selectedTypes.size) return;
     const includeUnanalyzed = includeUnanalyzedBox ? includeUnanalyzedBox.checked : true;
-    close({ paths: new Set(selected), types: new Set(selectedTypes), includeUnanalyzed });
+    const includeService = includeServiceBox ? includeServiceBox.checked : false;
+    close({ paths: new Set(selected), types: new Set(selectedTypes), includeUnanalyzed, includeService });
   });
 
+  if (includeServiceBox) {
+    includeServiceBox.addEventListener("change", recomputeFromOptions);
+  }
+
   return {
-    ask(topItems, files) {
+    ask(files) {
       return new Promise((resolve) => {
-        items = topItems;
         allFiles = files || [];
-        selected = new Set(topItems.map((i) => i.name));
-        selectedTypes = new Set(TYPE_GROUPS.map((g) => g.key));
         if (includeUnanalyzedBox) includeUnanalyzedBox.checked = false;
+        if (includeServiceBox) includeServiceBox.checked = false;
         resolver = resolve;
-        renderTypes();
-        renderPaths();
+        recomputeFromOptions();
         modal.classList.remove("hidden");
       });
     },

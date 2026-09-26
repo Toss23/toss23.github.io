@@ -216,6 +216,17 @@ function parseCsharpFile(content) {
    Общая структура файла
    ============================================================ */
 
+export const SERVICE_FOLDER_RE = /^(bin|obj|Debug|Release|packages|node_modules|\.vs|\.vscode|\.idea|\.git|TestResults|artifacts|net\d+(?:\.\d+)?|netstandard\d+(?:\.\d+)?|netcoreapp\d+(?:\.\d+)?)$/i;
+
+export function hasServiceFolder(path) {
+  if (typeof path !== "string") return false;
+  const parts = path.split("/");
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (SERVICE_FOLDER_RE.test(parts[i])) return true;
+  }
+  return false;
+}
+
 export function isAnalyzable(path) {
   const k = kindOf(path);
   return k === "js" || k === "cs";

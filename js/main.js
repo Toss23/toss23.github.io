@@ -36,7 +36,7 @@ import { initRepoActionsModal } from "@ui/repo-actions-modal.js";
 import { initUpdateModal } from "@ui/update-modal.js";
 import { initAiModal } from "@ui/ai-modal.js";
 import { parseJson, checkChange, applyChange } from "@api/ai-patches.js";
-import { parseFile, renderProjectMap, isAnalyzable } from "@api/project-map.js";
+import { parseFile, renderProjectMap, isAnalyzable, hasServiceFolder } from "@api/project-map.js";
 import { initEditorTabs } from "@ui/editor-tabs.js";
 import { initMapSelectModal } from "@ui/map-select-modal.js";
 import { initEditorKeybar } from "@ui/editor-keybar.js";
@@ -1308,26 +1308,6 @@ function editorFindSelection(textarea) {
 
 let isPasteInProgress = false;
 
-function computeTopLevel(files) {
-  const items = new Map();
-  for (const f of files) {
-    const slash = f.path.indexOf("/");
-    if (slash < 0) {
-      items.set(f.path, { name: f.path, isFolder: false, count: 1, bytes: f.size || 0 });
-    } else {
-      const top = f.path.slice(0, slash);
-      if (!items.has(top)) items.set(top, { name: top, isFolder: true, count: 0, bytes: 0 });
-      const it = items.get(top);
-      it.count++;
-      it.bytes += f.size || 0;
-    }
-  }
-  return [...items.values()].sort((a, b) => {
-    if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-}
-
 function groupKeyForPath(path) {
   const ext = (path.split(".").pop() || "").toLowerCase();
   if (ext === "cs") return "cs";
@@ -1340,12 +1320,14 @@ function filterFilesBySelection(files, selection) {
   const paths = selection.paths instanceof Set ? selection.paths : selection;
   const types = selection.types instanceof Set ? selection.types : null;
   const includeUnanalyzed = selection.includeUnanalyzed !== false;
+  const includeService = selection.includeService === true;
   return files.filter((f) => {
     const slash = f.path.indexOf("/");
     const top = slash < 0 ? f.path : f.path.slice(0, slash);
     if (!paths.has(top)) return false;
     if (types && !types.has(groupKeyForPath(f.path))) return false;
     if (!includeUnanalyzed && !isAnalyzable(f.path)) return false;
+    if (!includeService && hasServiceFolder(f.path)) return false;
     return true;
   });
 }
@@ -1360,8 +1342,7 @@ async function handleGenerateProjectMap() {
     return;
   }
 
-  const topItems = computeTopLevel(files);
-  const selection = await mapSelectModal.ask(topItems, files);
+  const selection = await mapSelectModal.ask(files);
   if (!selection) return;
 
   const subset = filterFilesBySelection(files, selection);
@@ -1434,8 +1415,7 @@ async function handleGenerateFullInstructions() {
     return;
   }
 
-  const topItems = computeTopLevel(files);
-  const selection = await mapSelectModal.ask(topItems, files);
+  const selection = await mapSelectModal.ask(files);
   if (!selection) return;
 
   const subset = filterFilesBySelection(files, selection);
