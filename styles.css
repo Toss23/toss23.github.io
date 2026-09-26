@@ -1250,6 +1250,50 @@ body {
 }
 
 /* ============================================================
+   Модалка выбора для карты проекта
+   ============================================================ */
+.map-select-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  max-height: 50vh;
+  -webkit-overflow-scrolling: touch;
+}
+.map-select-list li {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid #262626;
+  cursor: pointer;
+  user-select: none;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+.map-select-list li:hover { background: #2a2d2e; }
+.map-select-list li .checkbox {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  accent-color: #0e639c;
+  cursor: pointer;
+}
+.map-select-list li .icon { flex-shrink: 0; }
+.map-select-list li .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-select-list li .meta {
+  font-size: 11px;
+  color: #888;
+  font-family: -apple-system, system-ui, sans-serif;
+  flex-shrink: 0;
+}
+
+/* ============================================================
    Универсальный диалог
    ============================================================ */
 .dialog-content { max-width: 420px; }

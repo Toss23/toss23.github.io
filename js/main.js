@@ -38,6 +38,7 @@ import { initAiModal } from "@ui/ai-modal.js";
 import { parseJson, checkChange, applyChange } from "@api/ai-patches.js";
 import { parseFile, renderProjectMap } from "@api/project-map.js";
 import { initEditorTabs } from "@ui/editor-tabs.js";
+import { initMapSelectModal } from "@ui/map-select-modal.js";
 import { initEditorKeybar } from "@ui/editor-keybar.js";
 import { initKeyboardViewport } from "@ui/keyboard-viewport.js";
 
@@ -226,6 +227,8 @@ const editorTabs = initEditorTabs({
   onSwitch: switchTab,
   onClose: closeTab,
 });
+
+const mapSelectModal = initMapSelectModal();
 const commitScreen = initCommitScreen({
   onSubmit: commit,
   onCancel: () => {},
@@ -1296,6 +1299,35 @@ function editorFindSelection(textarea) {
 
 /* ---------- AI-патчи ---------- */
 
+function computeTopLevel(files) {
+  const items = new Map();
+  for (const f of files) {
+    const slash = f.path.indexOf("/");
+    if (slash < 0) {
+      items.set(f.path, { name: f.path, isFolder: false, count: 1, bytes: f.size || 0 });
+    } else {
+      const top = f.path.slice(0, slash);
+      if (!items.has(top)) items.set(top, { name: top, isFolder: true, count: 0, bytes: 0 });
+      const it = items.get(top);
+      it.count++;
+      it.bytes += f.size || 0;
+    }
+  }
+  return [...items.values()].sort((a, b) => {
+    if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function filterFilesBySelection(files, selection) {
+  if (!selection) return files;
+  return files.filter((f) => {
+    const slash = f.path.indexOf("/");
+    const top = slash < 0 ? f.path : f.path.slice(0, slash);
+    return selection.has(top);
+  });
+}
+
 async function handleGenerateProjectMap() {
   const { mode, files, repo, branch } = getState();
   if (!files.length) {
@@ -1306,13 +1338,23 @@ async function handleGenerateProjectMap() {
     return;
   }
 
+  const topItems = computeTopLevel(files);
+  const selection = await mapSelectModal.ask(topItems);
+  if (!selection) return;
+
+  const subset = filterFilesBySelection(files, selection);
+  if (!subset.length) {
+    await dialogs.alert({ title: "Нечего обрабатывать", text: "Выбрано 0 файлов." });
+    return;
+  }
+
   showBusy("Генерация карты проекта…");
-  progressBar.show("Чтение файлов: 0 / " + files.length);
+  progressBar.show("Чтение файлов: 0 / " + subset.length);
   try {
     const result = [];
     let done = 0;
-    for (const f of files) {
-      progressBar.update(done, files.length);
+    for (const f of subset) {
+      progressBar.update(done, subset.length);
       updateBusyText("Обработка: " + f.path);
       try {
         const content = await getCurrentFileContent(f.path);
@@ -1326,7 +1368,7 @@ async function handleGenerateProjectMap() {
       }
       done++;
     }
-    progressBar.update(done, files.length);
+    progressBar.update(done, subset.length);
 
     const md = renderProjectMap({
       repoLabel: repo?.fullName || "",
@@ -1335,8 +1377,6 @@ async function handleGenerateProjectMap() {
       files: result,
     });
 
-    // Оверлей скроется в finally, а предпросмотр откроется
-    // в следующем тике — чтобы точно оказаться поверх и без busy.
     setTimeout(() => {
       aiModal.openMapPreview(md, () => downloadText("project-map.md", md));
     }, 0);
@@ -1372,13 +1412,23 @@ async function handleGenerateFullInstructions() {
     return;
   }
 
+  const topItems = computeTopLevel(files);
+  const selection = await mapSelectModal.ask(topItems);
+  if (!selection) return;
+
+  const subset = filterFilesBySelection(files, selection);
+  if (!subset.length) {
+    await dialogs.alert({ title: "Нечего обрабатывать", text: "Выбрано 0 файлов." });
+    return;
+  }
+
   showBusy("Формирование полной инструкции…");
-  progressBar.show("Чтение файлов: 0 / " + files.length);
+  progressBar.show("Чтение файлов: 0 / " + subset.length);
   try {
     const result = [];
     let done = 0;
-    for (const f of files) {
-      progressBar.update(done, files.length);
+    for (const f of subset) {
+      progressBar.update(done, subset.length);
       updateBusyText("Обработка: " + f.path);
       try {
         const content = await getCurrentFileContent(f.path);
@@ -1391,7 +1441,7 @@ async function handleGenerateFullInstructions() {
       }
       done++;
     }
-    progressBar.update(done, files.length);
+    progressBar.update(done, subset.length);
 
     const mapMd = renderProjectMap({
       repoLabel: repo?.fullName || "",
