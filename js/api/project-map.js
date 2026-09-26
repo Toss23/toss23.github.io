@@ -22,6 +22,23 @@ export function kindOf(path) {
   return "other";
 }
 
+// Возвращает true, если файл разбирается анализатором карты (JS или C#).
+export function isAnalyzable(path) {
+  const kind = kindOf(path);
+  return kind === "js" || kind === "cs";
+}
+
+// Возвращает true, если файл лежит внутри папки, которая выглядит как сервисная:
+// имя папки — services, service, Service, Services и т.п.
+export function hasServiceFolder(path) {
+  if (!path) return false;
+  const parts = path.split("/");
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (/^services?$/i.test(parts[i])) return true;
+  }
+  return false;
+}
+
 function formatSize(bytes) {
   if (!bytes && bytes !== 0) return "?";
   if (bytes < 1024) return bytes + " Б";
