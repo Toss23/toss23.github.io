@@ -260,6 +260,23 @@
     </div>
   </div>
 
+  <!-- Модалка вставки JSON -->
+  <div id="ai-paste-modal" class="modal hidden">
+    <div class="modal-content ai-modal-content">
+      <div class="modal-head">
+        <h3>Вставить JSON</h3>
+        <button id="ai-paste-close" class="icon-btn" title="Закрыть">✕</button>
+      </div>
+      <textarea id="ai-paste-textarea" class="ai-paste-textarea" placeholder="Вставьте сюда JSON с патчами…" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off"></textarea>
+      <div id="ai-paste-error" class="ai-paste-error hidden"></div>
+      <div class="modal-actions">
+        <button id="ai-paste-from-clipboard" class="icon-btn">📋 Из буфера</button>
+        <button id="ai-paste-cancel" class="icon-btn">Отмена</button>
+        <button id="ai-paste-submit" class="primary">Обработать</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Модалка AI -->
   <div id="ai-modal" class="modal hidden">
     <div class="modal-content ai-modal-content">
@@ -268,7 +285,8 @@
         <button id="ai-close" class="icon-btn">✕</button>
       </div>
       <div class="ai-toolbar">
-        <button id="ai-load-json" class="icon-btn">📂 Загрузить JSON с патчами</button>
+        <button id="ai-load-json" class="icon-btn">📂 Загрузить JSON</button>
+        <button id="ai-paste-json" class="icon-btn">📋 Вставить JSON</button>
         <a href="./ai-instructions.md" download="ai-instructions.md" class="btn-link" title="Скачать инструкцию по формату JSON для AI">📖 Инструкция для AI</a>
         <button id="ai-generate-map" class="icon-btn" title="Скачать карту проекта для AI">🗺 Карта проекта</button>
         <button id="ai-generate-full" class="icon-btn" title="Скачать объединённый файл (инструкция + карта проекта)">📚 Полная инструкция</button>

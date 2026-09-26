@@ -4,6 +4,14 @@ import { attachBackdropDismiss } from "@ui/modal-dismiss.js";
 export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFullInstructions }) {
   const modal = $("ai-modal");
   const btnLoad = $("ai-load-json");
+  const btnPaste = $("ai-paste-json");
+  const pasteModal = $("ai-paste-modal");
+  const pasteTextarea = $("ai-paste-textarea");
+  const pasteError = $("ai-paste-error");
+  const pasteClose = $("ai-paste-close");
+  const pasteCancel = $("ai-paste-cancel");
+  const pasteSubmit = $("ai-paste-submit");
+  const pasteFromClipboard = $("ai-paste-from-clipboard");
   const btnMap = $("ai-generate-map");
   const btnFull = $("ai-generate-full");
   const fileInput = $("ai-json-input");
@@ -22,6 +30,86 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFull
 
   function close() { modal.classList.add("hidden"); }
   if (closeBtn) closeBtn.addEventListener("click", close);
+
+  /* ---------- Вставка JSON ---------- */
+
+  function openPaste() {
+    if (!pasteModal || !pasteTextarea) return;
+    pasteTextarea.value = "";
+    if (pasteError) {
+      pasteError.classList.add("hidden");
+      pasteError.textContent = "";
+    }
+    pasteModal.classList.remove("hidden");
+    setTimeout(() => pasteTextarea.focus(), 50);
+  }
+
+  function closePaste() {
+    if (!pasteModal) return;
+    pasteModal.classList.add("hidden");
+  }
+
+  function showPasteError(msg) {
+    if (!pasteError) return;
+    pasteError.textContent = msg || "";
+    pasteError.classList.toggle("hidden", !msg);
+  }
+
+  async function submitPaste() {
+    if (!pasteTextarea) return;
+    const text = pasteTextarea.value.trim();
+    if (!text) {
+      showPasteError("Пустое поле. Вставьте JSON.");
+      return;
+    }
+    showPasteError("");
+    try {
+      await onLoadJson(text);
+      closePaste();
+    } catch (e) {
+      showPasteError(e.message || String(e));
+    }
+  }
+
+  if (btnPaste) btnPaste.addEventListener("click", openPaste);
+  if (pasteClose) pasteClose.addEventListener("click", closePaste);
+  if (pasteCancel) pasteCancel.addEventListener("click", closePaste);
+  if (pasteSubmit) pasteSubmit.addEventListener("click", submitPaste);
+
+  if (pasteTextarea) {
+    pasteTextarea.addEventListener("input", () => {
+      if (pasteError) pasteError.classList.add("hidden");
+    });
+    pasteTextarea.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        submitPaste();
+      }
+    });
+  }
+
+  if (pasteFromClipboard) {
+    pasteFromClipboard.addEventListener("click", async () => {
+      try {
+        if (!navigator.clipboard || !navigator.clipboard.readText) {
+          showPasteError("Буфер обмена недоступен. Вставьте вручную.");
+          return;
+        }
+        const text = await navigator.clipboard.readText();
+        if (!text) {
+          showPasteError("Буфер обмена пуст.");
+          return;
+        }
+        if (pasteTextarea) {
+          pasteTextarea.value = text;
+          pasteTextarea.focus();
+        }
+        showPasteError("");
+      } catch (e) {
+        showPasteError("Нет доступа к буферу. Вставьте вручную.");
+      }
+    });
+  }
   attachBackdropDismiss(modal, close);
 
   function openMapPreview(content, onDownload) {
@@ -234,5 +322,7 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFull
     close,
     openMapPreview(content, onDownload) { openMapPreview(content, onDownload); },
     closeMapPreview() { closeMapPreview(); },
+    openPaste() { openPaste(); },
+    closePaste() { closePaste(); },
   };
 }

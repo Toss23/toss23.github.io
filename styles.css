@@ -1250,6 +1250,40 @@ body {
 }
 
 /* ============================================================
+   Модалка вставки JSON
+   ============================================================ */
+.ai-paste-textarea {
+  width: 100%;
+  min-height: 260px;
+  max-height: 55vh;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  background: #1a1a1a;
+  color: #ddd;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 10px;
+  box-sizing: border-box;
+  resize: vertical;
+  outline: none;
+}
+.ai-paste-textarea:focus { border-color: #0e639c; }
+.ai-paste-error {
+  color: #f48771;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  background: #2a1c1c;
+  border: 1px solid #4a2a2a;
+  border-radius: 4px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+/* ============================================================
    Модалка выбора для карты проекта
    ============================================================ */
 .map-select-list {

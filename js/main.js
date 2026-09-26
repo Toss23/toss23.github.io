@@ -196,7 +196,14 @@ const dropZone = initDropZone({
 });
 
 const aiModal = initAiModal({
-  onLoadJson: handleAiJsonLoad,
+  onLoadJson: async (text) => {
+    isPasteInProgress = true;
+    try {
+      return await handleAiJsonLoad(text);
+    } finally {
+      isPasteInProgress = false;
+    }
+  },
   onApply: handleAiApply,
   onGenerateMap: handleGenerateProjectMap,
   onGenerateFullInstructions: handleGenerateFullInstructions,
@@ -1299,6 +1306,8 @@ function editorFindSelection(textarea) {
 
 /* ---------- AI-патчи ---------- */
 
+let isPasteInProgress = false;
+
 function computeTopLevel(files) {
   const items = new Map();
   for (const f of files) {
@@ -1528,6 +1537,9 @@ async function handleAiJsonLoad(text) {
   try {
     parsed = parseJson(text);
   } catch (e) {
+    // Если пришло из вставки — кинем ошибку наверх,
+    // чтобы она показалась прямо в модалке.
+    if (isPasteInProgress) throw e;
     await dialogs.alert({ title: "Ошибка JSON", text: e.message });
     return;
   }
