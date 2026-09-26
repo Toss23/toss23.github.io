@@ -407,7 +407,15 @@ body {
   height: auto;
   flex: none;
 }
-#file-editor #file-content::selection { background: #214283; color: transparent; }
+#file-editor #file-content::selection {
+  /* Полупрозрачное выделение — текст под ним виден */
+  background: rgba(88, 130, 193, 0.35);
+  color: transparent;
+}
+#file-editor #file-content::-moz-selection {
+  background: rgba(88, 130, 193, 0.35);
+  color: transparent;
+}
 #file-editor #file-content:disabled { color: transparent; }
 #file-editor .editor-highlight {
   background: #2B2B2B;
