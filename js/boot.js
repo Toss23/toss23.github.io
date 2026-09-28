@@ -42,14 +42,54 @@ async function ping(url, timeoutMs = 8000) {
   }
 }
 
+// Показывает свёрнутый блок с полным текстом ошибки под списком модулей.
+function showErrorDetails(text) {
+  let wrap = document.getElementById("boot-error-details");
+  if (!wrap) {
+    wrap = document.createElement("details");
+    wrap.id = "boot-error-details";
+    wrap.className = "boot-error-details";
+
+    const summary = document.createElement("summary");
+    summary.textContent = "Показать текст ошибки";
+    wrap.appendChild(summary);
+
+    const pre = document.createElement("pre");
+    pre.id = "boot-error-text";
+    pre.className = "boot-error-text";
+    wrap.appendChild(pre);
+
+    if (bootList && bootList.parentNode) {
+      bootList.parentNode.insertBefore(wrap, bootList.nextSibling);
+    } else if (bootScreen) {
+      bootScreen.appendChild(wrap);
+    }
+  }
+  const pre = wrap.querySelector("#boot-error-text");
+  if (pre) pre.textContent = text;
+  wrap.classList.remove("hidden");
+  wrap.open = false;
+}
+
+function hideErrorDetails() {
+  const wrap = document.getElementById("boot-error-details");
+  if (wrap) wrap.classList.add("hidden");
+}
+
 async function tryLoadMain() {
   setItem("core", "pending");
   try {
     await import("./main.js");
     setItem("core", "ok", "OK");
+    hideErrorDetails();
     return true;
   } catch (e) {
-    setItem("core", "fail", (e.message || "не загрузился").slice(0, 80));
+    setItem("core", "fail", "Failed");
+    const parts = [];
+    if (e && e.message) parts.push(e.message);
+    else parts.push(String(e));
+    if (e && e.stack) parts.push("\n" + e.stack);
+    showErrorDetails(parts.join(""));
     return false;
   }
 }

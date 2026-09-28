@@ -953,6 +953,49 @@ body {
   margin-bottom: 16px;
   min-height: 36px;
 }
+
+.boot-error-details {
+  margin: 0 0 16px;
+  background: #2a1c1c;
+  border: 1px solid #4a2a2a;
+  border-radius: 6px;
+  color: #f0b0a0;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  overflow: hidden;
+}
+.boot-error-details summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  list-style: none;
+}
+.boot-error-details summary::-webkit-details-marker { display: none; }
+.boot-error-details summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.boot-error-details[open] summary::before {
+  content: "▾ ";
+}
+.boot-error-details[open] summary {
+  border-bottom: 1px solid #4a2a2a;
+}
+.boot-error-details summary:hover { background: #321f1f; }
+.boot-error-text {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #f0b0a0;
+  background: #1a1010;
+}
 #boot-status.error { color: #f48771; }
 #boot-retry { display: block; width: 100%; margin-top: 4px; }
 
