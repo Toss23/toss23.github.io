@@ -44,6 +44,7 @@ import { initEditorKeybar } from "@ui/editor-keybar.js";
 import { initCustomKeyboard } from "@ui/custom-keyboard.js";
 import { initKeyboardViewport } from "@ui/keyboard-viewport.js";
 import { initSettingsModal } from "@ui/settings-modal.js";
+import { initConsoleOverlay } from "@ui/console-overlay.js";
 
 import { initAuthScreen } from "@screens/auth-screen.js";
 import { initReposScreen } from "@screens/repos-screen.js";
@@ -105,6 +106,11 @@ const progressBar = initProgressBar();
 const dialogs = initDialogs();
 
 const header = initHeader({ onLogout: confirmLogout });
+const consoleOverlay = initConsoleOverlay();
+{
+  const btn = header.getConsoleButton();
+  if (btn) btn.addEventListener("click", () => consoleOverlay.toggle());
+}
 const nav = initNav({ onExitRepo: exitRepo, onBack: goBack, onCommit: openCommit });
 initAuthScreen({ onToken: login });
 
@@ -699,6 +705,14 @@ async function login(token) {
     setState({ octokit, user });
     header.setUser(user.login);
 
+    // Кнопка консоли — только владельцу сайта.
+    try {
+      const appRepo = detectAppRepo();
+      const isOwner = appRepo && user && user.login &&
+        user.login.toLowerCase() === appRepo.owner.toLowerCase();
+      header.setConsoleVisible(!!isOwner);
+    } catch { header.setConsoleVisible(false); }
+
     updateBusyText("Подготовка хранилища…");
     const persistent = await storage.requestPersistent();
     console.log("Persistent storage:", persistent);
@@ -744,6 +758,8 @@ function logout() {
   reposScreen.reset();
   setState({ clonedDirty: new Set() });
   header.setLoggedOut();
+  header.setConsoleVisible(false);
+  try { consoleOverlay.hide(); } catch {}
   clearLastSession();
   setScreen(SCREENS.AUTH);
 }

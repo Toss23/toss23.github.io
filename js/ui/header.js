@@ -6,6 +6,8 @@ export function initHeader({ onLogout }) {
 
   logout.addEventListener("click", () => onLogout());
 
+  const consoleBtn = document.getElementById("console-btn");
+
   return {
     setUser(login) {
       userInfo.textContent = login ? `@${login}` : "";
@@ -14,6 +16,13 @@ export function initHeader({ onLogout }) {
     setLoggedOut() {
       userInfo.textContent = "";
       logout.disabled = true;
+    },
+    setConsoleVisible(visible) {
+      if (!consoleBtn) return;
+      consoleBtn.classList.toggle("hidden", !visible);
+    },
+    getConsoleButton() {
+      return consoleBtn;
     },
   };
 }
