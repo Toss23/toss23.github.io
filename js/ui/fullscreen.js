@@ -9,13 +9,23 @@ export function initFullscreen(buttonId) {
     return;
   }
 
+  // Подсветка активного состояния. Инжектируем один раз.
+  if (!document.getElementById("fullscreen-active-style")) {
+    const style = document.createElement("style");
+    style.id = "fullscreen-active-style";
+    style.textContent =
+      "#fullscreen-btn.active{background:#3a3d41 !important;color:#fff !important;}";
+    document.head.appendChild(style);
+  }
+
   function isFs() {
     return !!(document.fullscreenElement || document.webkitFullscreenElement);
   }
 
   function update() {
-    btn.textContent = isFs() ? "⤡" : "⤢";
+    btn.textContent = "⛶";
     btn.title = isFs() ? "Выйти из полного экрана" : "На весь экран";
+    btn.classList.toggle("active", isFs());
   }
 
   async function toggle() {
