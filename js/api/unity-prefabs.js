@@ -1,10 +1,10 @@
 // Резолвер префабов и спрайт-ассетов Unity.
 // По guid находит ассет в репозитории:
 //   - .prefab      → рекурсивный обход с применением override'ов
-//   - .psb/.psd    → размеры + декодированная картинка через @webtoon/psd
+//   - .psb/.psd    → bbox из .meta + декодированная картинка
 //   - .png/.jpg    → размеры из заголовка
 //
-// Возвращает { hasSprite, minX, minY, maxX, maxY, sprites[], bitmap? }.
+// Возвращает { hasSprite, minX, minY, maxX, maxY, bitmap?, imagePPU }.
 
 import { get as idbGet, set as idbSet } from "https://esm.sh/idb-keyval@6";
 import { parseUnityYaml, buildSceneModel } from "./unity-yaml.js";
@@ -71,10 +71,6 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
     "· .meta:", metaFiles.length,
     "· прочих:", otherFiles
   );
-  if (metaFiles.length === 0) {
-    console.warn("[prefabs] в репозитории не найдено ни одного .meta файла. " +
-      "Guid-ссылки разрешить не получится.");
-  }
 
   const guidToPath = {};
   const kindByGuid = {};
@@ -156,10 +152,7 @@ async function readAssetSize(kind, getContent, getAssetBytes, assetPath) {
     }
     if (!bytes) {
       const content = await getContent(assetPath);
-      if (content === null || content === undefined) {
-        console.warn("[prefabs] ассет недоступен:", assetPath);
-        return null;
-      }
+      if (content === null || content === undefined) return null;
       if (content instanceof Uint8Array) bytes = content;
       else if (typeof content === "object" && content.binary) return null;
       else if (typeof content === "string" && /^[A-Za-z0-9+/=]+$/.test(content.slice(0, 64))) {
@@ -258,63 +251,66 @@ export async function loadPrefabBoundingBox({
 
     if (metaInfo && metaInfo.sprites.length) {
       const ppu = metaInfo.ppu;
-      const spriteRects = [];
       let minX = Infinity, maxX = -Infinity;
       let minY = Infinity, maxY = -Infinity;
+      let minPx = Infinity, maxPx = -Infinity;
+      let minPy = Infinity, maxPy = -Infinity;
       for (const s of metaInfo.sprites) {
-        const w = s.rect.width / ppu;
-        const h = s.rect.height / ppu;
-        const cx = s.centerX / ppu;
-        const cy = s.centerY / ppu;
-        const px = (s.pivot && typeof s.pivot.x === "number") ? s.pivot.x : 0.5;
-        const py = (s.pivot && typeof s.pivot.y === "number") ? s.pivot.y : 0.5;
-        const x0 = cx - w / 2;
-        const y0 = cy - h / 2;
-        const x1 = cx + w / 2;
-        const y1 = cy + h / 2;
-        spriteRects.push({ x: cx, y: cy, w, h, name: s.name, pivotX: px, pivotY: py });
+        const wPx = s.rect.width;
+        const hPx = s.rect.height;
+        const cxPx = s.centerX;
+        const cyPx = s.centerY;
+        const x0 = (cxPx - wPx / 2) / ppu;
+        const y0 = (cyPx - hPx / 2) / ppu;
+        const x1 = (cxPx + wPx / 2) / ppu;
+        const y1 = (cyPx + hPx / 2) / ppu;
         if (x0 < minX) minX = x0;
         if (y0 < minY) minY = y0;
         if (x1 > maxX) maxX = x1;
         if (y1 > maxY) maxY = y1;
+        // Пиксельные границы для будущей обрезки картинки
+        if (cxPx - wPx / 2 < minPx) minPx = cxPx - wPx / 2;
+        if (cxPx + wPx / 2 > maxPx) maxPx = cxPx + wPx / 2;
+        if (cyPx - hPx / 2 < minPy) minPy = cyPx - hPx / 2;
+        if (cyPx + hPx / 2 > maxPy) maxPy = cyPx + hPx / 2;
       }
       console.log(
         "[prefabs] атлас:", metaInfo.sprites.length, "спрайтов · bbox:",
-        (maxX - minX).toFixed(2), "×", (maxY - minY).toFixed(2)
+        (maxX - minX).toFixed(2), "×", (maxY - minY).toFixed(2),
+        "· пиксели:", (maxPx - minPx).toFixed(0), "×", (maxPy - minPy).toFixed(0)
       );
 
       const result = {
         hasSprite: true,
         minX, minY, maxX, maxY,
-        sprites: spriteRects,
         color: { r: 1, g: 1, b: 1, a: 1 },
         spriteCount: metaInfo.sprites.length,
         imagePath: prefabPath,
         imagePPU: ppu,
+        // Пиксельные границы области спрайтов в документе Photoshop.
+        // Нужны, чтобы вырезать нужную часть из PSB-картинки.
+        docMinPx: minPx,
+        docMaxPx: maxPx,
+        docMinPy: minPy,
+        docMaxPy: maxPy,
       };
 
-      // Для PSD/PSB пробуем декодировать саму картинку.
       if ((kind === "psb" || kind === "psd") && typeof getAssetBytes === "function") {
         try {
           const bytes = await getAssetBytes(prefabPath);
           if (bytes && bytes.length) {
+            const info = readPsdInfo(bytes);
+            result.docWidthPx = info ? info.width : 0;
+            result.docHeightPx = info ? info.height : 0;
             const bitmap = await loadPsbImage(bytes, prefabPath);
             if (bitmap) {
               result.bitmap = bitmap;
               result.imageWidth = bitmap.width;
               result.imageHeight = bitmap.height;
-              // Превью из PSD хранит только визуальный размер (например 256×256),
-              // но по PPU он маппится на реальный размер документа. Для
-              // корректной отрисовки берём реальный размер из meta (bbox)
-              // и растягиваем превью на него.
-              result.imageSourceWidth = bitmap.width;
-              result.imageSourceHeight = bitmap.height;
-              result.imageIsPreview = (bitmap.width !== metaInfo.sprites.reduce(
-                (m, s) => Math.max(m, s.rect.x + s.rect.width), 0
-              ));
               console.log(
                 "[prefabs] картинка загружена:", prefabPath,
-                bitmap.width + "×" + bitmap.height
+                bitmap.width + "×" + bitmap.height,
+                "· документ:", result.docWidthPx + "×" + result.docHeightPx
               );
             }
           }
@@ -341,9 +337,14 @@ export async function loadPrefabBoundingBox({
       minY: -h / 2,
       maxX: w / 2,
       maxY: h / 2,
-      sprites: [{ x: 0, y: 0, w, h, name: "", pivotX: 0.5, pivotY: 0.5 }],
       color: { r: 1, g: 1, b: 1, a: 1 },
       spriteCount: 1,
+      docMinPx: 0,
+      docMaxPx: size.width,
+      docMinPy: 0,
+      docMaxPy: size.height,
+      docWidthPx: size.width,
+      docHeightPx: size.height,
     };
   }
 
@@ -368,13 +369,14 @@ export async function loadPrefabBoundingBox({
   let minY = Infinity, maxY = -Infinity;
   let spriteCount = 0;
   let firstColor = null;
-  const sprites = [];
   let bitmap = null;
   let imagePPU = null;
   let imageWidth = 0;
   let imageHeight = 0;
+  let docMinPx = 0, docMaxPx = 0, docMinPy = 0, docMaxPy = 0;
+  let docWidthPx = 0, docHeightPx = 0;
 
-  function absorb(cx, cy, hw, hh, color, name) {
+  function absorb(cx, cy, hw, hh, color) {
     const x0 = cx - hw, x1 = cx + hw;
     const y0 = cy - hh, y1 = cy + hh;
     if (x0 < minX) minX = x0;
@@ -382,12 +384,11 @@ export async function loadPrefabBoundingBox({
     if (y0 < minY) minY = y0;
     if (y1 > maxY) maxY = y1;
     if (!firstColor && color) firstColor = color;
-    sprites.push({ x: cx, y: cy, w: hw * 2, h: hh * 2, name: name || "" });
   }
 
   for (const g of model.gameObjects) {
     if (!g.hasSprite || g.sizeX === null || g.sizeY === null) continue;
-    absorb(g.worldX, g.worldY, g.sizeX / 2, g.sizeY / 2, g.spriteColor, g.name);
+    absorb(g.worldX, g.worldY, g.sizeX / 2, g.sizeY / 2, g.spriteColor);
     spriteCount++;
   }
 
@@ -451,23 +452,17 @@ export async function loadPrefabBoundingBox({
       if (!firstColor && nested.color) firstColor = nested.color;
       spriteCount += nested.spriteCount || 0;
 
-      if (Array.isArray(nested.sprites)) {
-        for (const s of nested.sprites) {
-          sprites.push({
-            x: g.localPos.x + s.x * sx,
-            y: g.localPos.y + s.y * sy,
-            w: s.w * Math.abs(sx),
-            h: s.h * Math.abs(sy),
-            name: s.name,
-          });
-        }
-      }
-
       if (!bitmap && nested.bitmap) {
         bitmap = nested.bitmap;
         imagePPU = nested.imagePPU;
         imageWidth = nested.imageWidth;
         imageHeight = nested.imageHeight;
+        docMinPx = nested.docMinPx;
+        docMaxPx = nested.docMaxPx;
+        docMinPy = nested.docMinPy;
+        docMaxPy = nested.docMaxPy;
+        docWidthPx = nested.docWidthPx;
+        docHeightPx = nested.docHeightPx;
       }
     }
   }
@@ -479,11 +474,12 @@ export async function loadPrefabBoundingBox({
   return {
     hasSprite: true,
     minX, minY, maxX, maxY,
-    sprites,
     bitmap,
     imagePPU,
     imageWidth,
     imageHeight,
+    docMinPx, docMaxPx, docMinPy, docMaxPy,
+    docWidthPx, docHeightPx,
     color: firstColor || { r: 1, g: 1, b: 1, a: 1 },
     spriteCount,
   };

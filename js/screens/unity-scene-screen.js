@@ -166,6 +166,56 @@ export function initUnitySceneScreen() {
     return step * pow;
   }
 
+  // Вырезает из PSB-картинки область, соответствующую спрайтам,
+  // и рисует её в bbox объекта. Картинка и bbox могут иметь разный
+  // размер и соотношение сторон — sourceRect выравнивает их.
+  function drawBitmap(g, bx, by, wPx, hPx, isSel) {
+    const srcW = g.bitmap.width;
+    const srcH = g.bitmap.height;
+
+    let sx = 0, sy = 0, sw = srcW, sh = srcH;
+
+    // Если известно, где в документе находятся спрайты (в пикселях),
+    // и известен размер документа — вырезаем эту область.
+    if (g.docWidthPx > 0 && g.docHeightPx > 0 &&
+        g.docMaxPx > g.docMinPx && g.docMaxPy > g.docMinPy) {
+      const kx = srcW / g.docWidthPx;
+      const ky = srcH / g.docHeightPx;
+      sx = g.docMinPx * kx;
+      sw = (g.docMaxPx - g.docMinPx) * kx;
+      // В PSD Y идёт снизу вверх, в ImageBitmap — сверху вниз.
+      // Верхний край области в картинке = (docHeight - docMaxPy).
+      const topPx = g.docHeightPx - g.docMaxPy;
+      const bottomPx = g.docHeightPx - g.docMinPy;
+      sy = topPx * ky;
+      sh = (bottomPx - topPx) * ky;
+    }
+
+    if (sw <= 0 || sh <= 0) {
+      sx = 0; sy = 0; sw = srcW; sh = srcH;
+    }
+
+    try {
+      ctx.drawImage(g.bitmap, sx, sy, sw, sh, bx, by, wPx, hPx);
+    } catch (e) {
+      ctx.strokeStyle = "#f48771";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx, by, wPx, hPx);
+    }
+
+    if (isSel) {
+      ctx.strokeStyle = "#ffb454";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bx, by, wPx, hPx);
+    }
+
+    if (view.scale > 8 || isSel) {
+      ctx.fillStyle = isSel ? "#fff" : "#999";
+      ctx.font = "11px ui-monospace, monospace";
+      ctx.fillText(g.name, bx + 6, by - 4);
+    }
+  }
+
   function draw() {
     if (!ctx || !canvasEl) return;
     const rect = canvasEl.getBoundingClientRect();
@@ -215,65 +265,18 @@ export function initUnitySceneScreen() {
       const cb = Math.round((c.b || 0) * 255);
       const ca = c.a === undefined ? 1 : c.a;
 
-      // 1. Есть декодированная картинка PSB/PSD — рисуем её.
-      //    Размер для отрисовки берём из bbox (g.sizeX/g.sizeY), а не из
-      //    размеров самой картинки: превью может быть маленьким, а bbox
-      //    соответствует тому, как объект реально разложен на сцене.
+      // 1. Есть картинка — рисуем её (с вырезкой области спрайтов).
       if (g.bitmap) {
         const p = toScreen(g.worldX, g.worldY);
-        const wU = Math.max(0.001, g.sizeX);
-        const hU = Math.max(0.001, g.sizeY);
-        const wPx = Math.max(2, wU * view.scale);
-        const hPx = Math.max(2, hU * view.scale);
+        const wPx = Math.max(2, Math.abs(g.sizeX) * view.scale);
+        const hPx = Math.max(2, Math.abs(g.sizeY) * view.scale);
         const bx = p.x - wPx / 2;
         const by = p.y - hPx / 2;
-        try {
-          ctx.drawImage(g.bitmap, bx, by, wPx, hPx);
-        } catch (e) {
-          ctx.strokeStyle = "#f48771";
-          ctx.lineWidth = 1;
-          ctx.strokeRect(bx, by, wPx, hPx);
-        }
-        if (isSel) {
-          ctx.strokeStyle = "#ffb454";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(bx, by, wPx, hPx);
-        }
-        if (view.scale > 8 || isSel) {
-          ctx.fillStyle = isSel ? "#fff" : "#999";
-          ctx.font = "11px ui-monospace, monospace";
-          ctx.fillText(g.name, bx + 6, by - 4);
-        }
+        drawBitmap(g, bx, by, wPx, hPx, isSel);
         continue;
       }
 
-      // 2. Есть отдельные прямоугольники атласа — рисуем каждый.
-      if (Array.isArray(g.subRects) && g.subRects.length) {
-        for (const r of g.subRects) {
-          const rp = toScreen(r.x, r.y);
-          const rw = Math.max(2, r.w * view.scale);
-          const rh = Math.max(2, r.h * view.scale);
-          const rx0 = rp.x - rw / 2;
-          const ry0 = rp.y - rh / 2;
-          ctx.fillStyle = "rgba(" + cr + "," + cg + "," + cb + "," + (isSel ? 0.35 : 0.2) + ")";
-          ctx.fillRect(rx0, ry0, rw, rh);
-          ctx.strokeStyle = isSel
-            ? "#ffb454"
-            : "rgba(" + cr + "," + cg + "," + cb + "," + Math.min(1, ca + 0.2) + ")";
-          ctx.lineWidth = 1;
-          ctx.strokeRect(rx0, ry0, rw, rh);
-        }
-        const p = toScreen(g.worldX, g.worldY);
-        if (view.scale > 8 || isSel) {
-          ctx.fillStyle = isSel ? "#fff" : "#999";
-          ctx.font = "11px ui-monospace, monospace";
-          const labelOffset = (g.sizeY * view.scale) / 2 + 4;
-          ctx.fillText(g.name, p.x + 8, p.y - labelOffset);
-        }
-        continue;
-      }
-
-      // 3. Обычный спрайт — один прямоугольник.
+      // 2. Иначе — прямоугольник по bbox.
       const p = toScreen(g.worldX, g.worldY);
       const w = Math.max(3, g.sizeX * view.scale);
       const h = Math.max(3, g.sizeY * view.scale);
@@ -382,25 +385,24 @@ export function initUnitySceneScreen() {
         pi.worldX = pi.localPos.x + cx * pi.localScale.x;
         pi.worldY = pi.localPos.y + cy * pi.localScale.y;
 
-        if (info.bitmap) {
-          pi.bitmap = info.bitmap;
-          pi.bitmapPPU = info.imagePPU || 100;
-          pi.bitmapW = info.imageWidth || info.bitmap.width;
-          pi.bitmapH = info.imageHeight || info.bitmap.height;
-          pi.subRects = null;
-        } else if (Array.isArray(info.sprites) && info.sprites.length > 1) {
-          pi.subRects = info.sprites.map((s) => ({
-            x: pi.localPos.x + s.x * pi.localScale.x,
-            y: pi.localPos.y + s.y * pi.localScale.y,
-            w: s.w * Math.abs(pi.localScale.x),
-            h: s.h * Math.abs(pi.localScale.y),
-            name: s.name,
-          }));
-          pi.bitmap = null;
-        } else {
-          pi.subRects = null;
-          pi.bitmap = null;
-        }
+        pi.bitmap = info.bitmap || null;
+        pi.bitmapW = info.imageWidth || (info.bitmap ? info.bitmap.width : 0);
+        pi.bitmapH = info.imageHeight || (info.bitmap ? info.bitmap.height : 0);
+        pi.docMinPx = info.docMinPx || 0;
+        pi.docMaxPx = info.docMaxPx || 0;
+        pi.docMinPy = info.docMinPy || 0;
+        pi.docMaxPy = info.docMaxPy || 0;
+        pi.docWidthPx = info.docWidthPx || 0;
+        pi.docHeightPx = info.docHeightPx || 0;
+
+        console.log(
+          "[unity-scene] применил:", pi.name,
+          "pos=" + pi.worldX.toFixed(2) + "," + pi.worldY.toFixed(2),
+          "size=" + pi.sizeX.toFixed(2) + "×" + pi.sizeY.toFixed(2),
+          "scale=" + pi.localScale.x + "," + pi.localScale.y,
+          "bitmap=" + pi.bitmapW + "×" + pi.bitmapH,
+          "doc=" + pi.docWidthPx + "×" + pi.docHeightPx
+        );
       }
 
       autoFit();
@@ -567,6 +569,12 @@ export function initUnitySceneScreen() {
         "Bounding size",
         fmtNum(go.sizeX) + " × " + fmtNum(go.sizeY)
       ));
+    }
+    if (go.bitmapW) {
+      body.appendChild(makeStaticField("Image", go.bitmapW + " × " + go.bitmapH));
+    }
+    if (go.docWidthPx) {
+      body.appendChild(makeStaticField("Document", go.docWidthPx + " × " + go.docHeightPx));
     }
 
     const mods = pi.m_Modification && pi.m_Modification.m_Modifications;
