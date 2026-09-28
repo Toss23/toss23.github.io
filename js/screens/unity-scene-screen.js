@@ -115,7 +115,10 @@ export function initUnitySceneScreen() {
   }
 
   function isDrawable(g) {
-    return g.sizeX !== null && g.sizeY !== null && g.sizeX > 0.001 && g.sizeY > 0.001;
+    // На сцене рисуем только спрайты. Canvas и всё остальное —
+    // только в иерархии и в инспекторе.
+    return g.hasSprite && g.sizeX !== null && g.sizeY !== null &&
+           g.sizeX > 0.001 && g.sizeY > 0.001;
   }
 
   function autoFit() {
@@ -230,13 +233,6 @@ export function initUnitySceneScreen() {
           : "rgba(" + cr + "," + cg + "," + cb + "," + Math.min(1, ca + 0.3) + ")";
         ctx.lineWidth = isSel ? 2 : 1;
         ctx.strokeRect(x0, y0, w, h);
-      } else if (g.isCanvas) {
-        ctx.save();
-        ctx.setLineDash([6, 4]);
-        ctx.strokeStyle = isSel ? "#ffb454" : "#7db0f0";
-        ctx.lineWidth = isSel ? 2 : 1;
-        ctx.strokeRect(x0, y0, w, h);
-        ctx.restore();
       }
 
       if (view.scale > 8 || isSel) {
