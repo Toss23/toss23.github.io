@@ -16,6 +16,7 @@ export async function loadPsbImage(bytes, cacheKey) {
       return null;
     }
 
+    // Копируем в свежий ArrayBuffer без offset.
     const buffer = bytes.buffer.slice(
       bytes.byteOffset,
       bytes.byteOffset + bytes.byteLength
@@ -33,7 +34,7 @@ export async function loadPsbImage(bytes, cacheKey) {
       rgba = new Uint8ClampedArray(composite.buffer, composite.byteOffset, composite.byteLength);
     }
     if (!rgba || rgba.length !== width * height * 4) {
-      console.warn("[psb-image] неожиданный размер composite:", rgba ? rgba.length : 0);
+      console.warn("[psb-image] неожиданный размер composite:", rgba ? rgba.length : 0, "ожидается", width * height * 4);
       return null;
     }
 
