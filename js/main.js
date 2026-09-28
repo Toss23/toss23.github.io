@@ -9,6 +9,7 @@ import {
 import { gitBlobSha, gitBlobShaFromBase64 } from "@core/git-sha.js";
 import { detectEol, toLf, fromLf, base64ToBytes, bytesToBase64 } from "@core/encoding.js";
 import { formatSize } from "@core/format.js";
+import { readPsdInfo, extractPsdThumbnail } from "@core/psd-preview.js";
 
 import { loadToken, saveToken, clearToken, createClient, fetchUser } from "@api/auth.js";
 import {
@@ -2067,6 +2068,51 @@ async function openImage(file) {
         return;
       }
       blob = await getBlobRaw(octokit, repo.owner, repo.name, sha);
+    }
+
+    // PSD/PSB — браузер их не умеет рисовать. Достаём встроенное превью
+    // и показываем его. Если в файле превью нет — сообщаем об этом.
+    const ext = (file.path.split(".").pop() || "").toLowerCase();
+    if (ext === "psd" || ext === "psb") {
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      const info = readPsdInfo(buf);
+      if (!info) {
+        await dialogs.alert({
+          title: "Не удалось прочитать файл",
+          text: file.path + "\n\nПохоже, это не PSD/PSB или файл повреждён.",
+        });
+        setStatus("");
+        return;
+      }
+
+      const MAX_DIM = 4096;
+      if (info.width > MAX_DIM || info.height > MAX_DIM) {
+        const ok = await dialogs.confirm({
+          title: "Файл слишком большой",
+          text:
+            file.path + "\n\n" +
+            "Размер документа: " + info.width + " × " + info.height + ".\n\n" +
+            "Будет показано уменьшенное превью из файла, а не оригинал.",
+          okText: "Открыть",
+          cancelText: "Отмена",
+        });
+        if (!ok) { setStatus(""); return; }
+      }
+
+      const preview = extractPsdThumbnail(buf);
+      if (!preview) {
+        await dialogs.alert({
+          title: "Превью недоступно",
+          text:
+            file.path + "\n\n" +
+            "Размер документа: " + info.width + " × " + info.height + ".\n\n" +
+            "В файле нет встроенного превью. Откройте его в Photoshop " +
+            "и сохраните с включённой опцией «Максимальная совместимость».",
+        });
+        setStatus("");
+        return;
+      }
+      blob = preview;
     }
 
     imageScreen.open(file.path, blob);

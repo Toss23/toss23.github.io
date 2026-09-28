@@ -22,7 +22,7 @@ export const SCREENS = {
   IMAGE: "image",
 };
 
-const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico"]);
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "psd", "psb"]);
 
 export function isImagePath(path) {
   if (!path) return false;
