@@ -272,8 +272,18 @@ export function initUnitySceneScreen() {
         const hPx = Math.max(2, Math.abs(g.sizeY) * view.scale);
         const bx = p.x - wPx / 2;
         const by = p.y - hPx / 2;
+        console.log("[unity-scene] draw bitmap:", g.name,
+          "bitmap=" + g.bitmap.width + "×" + g.bitmap.height,
+          "doc=" + g.docWidthPx + "×" + g.docHeightPx,
+          "bboxPx=" + g.docMinPx + "," + g.docMinPy + " → " + g.docMaxPx + "," + g.docMaxPy,
+          "→", bx.toFixed(0) + "," + by.toFixed(0), wPx.toFixed(0) + "×" + hPx.toFixed(0));
         drawBitmap(g, bx, by, wPx, hPx, isSel);
         continue;
+      } else {
+        console.warn("[unity-scene] no bitmap для", g.name,
+          "· hasSprite=" + g.hasSprite,
+          "· bitmapW=" + (g.bitmapW || 0),
+          "· bitmapH=" + (g.bitmapH || 0));
       }
 
       // 2. Иначе — прямоугольник по bbox.
