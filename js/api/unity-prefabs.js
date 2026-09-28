@@ -11,6 +11,7 @@
 import { get as idbGet, set as idbSet } from "https://esm.sh/idb-keyval@6";
 import { parseUnityYaml, buildSceneModel } from "./unity-yaml.js";
 import { readPsdInfo } from "@core/psd-preview.js";
+import { parseSpriteMeta } from "./unity-sprite-meta.js";
 
 const CACHE_PREFIX = "unity_prefabs:";
 const CACHE_VERSION = "v3";
@@ -268,12 +269,64 @@ export async function loadPrefabBoundingBox({
   if (selfGuid && visited.has(selfGuid)) return null;
   if (selfGuid) visited.add(selfGuid);
 
-  // --- Ассеты-картинки: размер из заголовка ---
+  // --- Ассеты-картинки ---
   if (kind && kind !== "prefab" && kind !== "asset") {
+    // 1. Читаем .meta — там PPU и список спрайтов атласа.
+    let metaInfo = null;
+    try {
+      const metaPath = prefabPath + ".meta";
+      const metaText = await getContent(metaPath);
+      if (typeof metaText === "string") {
+        metaInfo = parseSpriteMeta(metaText);
+        if (metaInfo) {
+          console.log(
+            "[prefabs] meta:", prefabPath,
+            "PPU:", metaInfo.ppu,
+            "спрайтов:", metaInfo.sprites.length
+          );
+        }
+      }
+    } catch (e) {
+      console.warn("[prefabs] meta read:", prefabPath, e.message);
+    }
+
+    // 2. Если .meta дала список спрайтов — считаем bbox по ним.
+    if (metaInfo && metaInfo.sprites.length) {
+      let minX = Infinity, maxX = -Infinity;
+      let minY = Infinity, maxY = -Infinity;
+      for (const s of metaInfo.sprites) {
+        const x0 = s.rect.x / metaInfo.ppu;
+        const y0 = s.rect.y / metaInfo.ppu;
+        const x1 = (s.rect.x + s.rect.width) / metaInfo.ppu;
+        const y1 = (s.rect.y + s.rect.height) / metaInfo.ppu;
+        if (x0 < minX) minX = x0;
+        if (y0 < minY) minY = y0;
+        if (x1 > maxX) maxX = x1;
+        if (y1 > maxY) maxY = y1;
+      }
+      console.log(
+        "[prefabs] bbox атласа:",
+        (maxX - minX).toFixed(2), "×", (maxY - minY).toFixed(2),
+        "·", metaInfo.sprites.length, "спрайтов"
+      );
+      return {
+        hasSprite: true,
+        minX, minY, maxX, maxY,
+        color: { r: 1, g: 1, b: 1, a: 1 },
+        spriteCount: metaInfo.sprites.length,
+      };
+    }
+
+    // 3. Fallback — читаем заголовок самого файла.
     const size = await readAssetSize(kind, getContent, getAssetBytes, prefabPath);
-    if (!size || !size.width || !size.height) return { hasSprite: false };
-    const w = size.width / DEFAULT_PPU;
-    const h = size.height / DEFAULT_PPU;
+    if (!size || !size.width || !size.height) {
+      console.warn("[prefabs] не удалось получить ни meta, ни размер:", prefabPath);
+      return { hasSprite: false };
+    }
+    const ppu = (metaInfo && metaInfo.ppu) || DEFAULT_PPU;
+    const w = size.width / ppu;
+    const h = size.height / ppu;
+    console.log("[prefabs] fallback размер:", w.toFixed(2), "×", h.toFixed(2));
     return {
       hasSprite: true,
       minX: -w / 2,
