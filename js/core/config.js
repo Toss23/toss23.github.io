@@ -20,6 +20,7 @@ export const SCREENS = {
   EDITOR: "editor",
   HISTORY: "history",
   IMAGE: "image",
+  AUDIO: "audio",
 };
 
 // Резервный адрес репозитория приложения. Используется, когда hostname
@@ -37,4 +38,18 @@ export function isImagePath(path) {
   const dot = path.lastIndexOf(".");
   if (dot < 0) return false;
   return IMAGE_EXTENSIONS.has(path.slice(dot + 1).toLowerCase());
+}
+
+// Расширения, которые браузер может воспроизвести через <audio>.
+// Реальная поддержка зависит от браузера, но эти имеет смысл пытаться.
+const AUDIO_EXTENSIONS = new Set([
+  "mp3", "wav", "ogg", "oga", "opus", "flac",
+  "aac", "m4a", "weba", "mid", "midi",
+]);
+
+export function isAudioPath(path) {
+  if (!path) return false;
+  const dot = path.lastIndexOf(".");
+  if (dot < 0) return false;
+  return AUDIO_EXTENSIONS.has(path.slice(dot + 1).toLowerCase());
 }

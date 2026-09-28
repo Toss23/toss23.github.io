@@ -166,6 +166,16 @@
     </div>
   </section>
 
+  <!-- Экран воспроизведения аудио -->
+  <section id="screen-audio" class="screen hidden">
+    <div class="screen-header">
+      <span id="audio-path" class="file-path"></span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:center;padding:24px;">
+      <audio id="audio-content" controls preload="metadata" style="width:100%;max-width:560px;"></audio>
+    </div>
+  </section>
+
   <!-- Нижняя панель -->
   <nav id="nav-bar" class="hidden">
     <button id="nav-commit" title="Коммит">🟩 Коммит</button>

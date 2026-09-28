@@ -54,9 +54,10 @@ import { initEditorContextMenu } from "@ui/editor-context-menu.js";
 import { initMapPreviewHighlight } from "@ui/map-preview-highlight.js";
 import { initHistoryScreen } from "@screens/history-screen.js";
 import { initImageScreen } from "@screens/image-screen.js";
+import { initAudioScreen } from "@screens/audio-screen.js";
 import { initCommitScreen } from "@screens/commit-screen.js";
 
-import { SCREENS, isImagePath, APP_REPO } from "@core/config.js";
+import { SCREENS, isImagePath, isAudioPath, APP_REPO } from "@core/config.js";
 import * as storage from "@core/storage.js";
 
 /* ---------- Утилиты ---------- */
@@ -315,6 +316,7 @@ const historyScreen = initHistoryScreen({
 const historyModal = initHistoryModal({ onRevert: handleRevertCommit });
 
 const imageScreen = initImageScreen();
+const audioScreen = initAudioScreen();
 
 /* ---------- Авто-проверка обновлений в local ---------- */
 
@@ -387,12 +389,14 @@ const SCREEN_IDS = {
   [SCREENS.EDITOR]: "screen-editor",
   [SCREENS.HISTORY]: "screen-history",
   [SCREENS.IMAGE]: "screen-image",
+  [SCREENS.AUDIO]: "screen-audio",
 };
 
 function refreshNav() {
   const s = getState().screen;
   const isAppScreen = s === SCREENS.FILES || s === SCREENS.EDITOR ||
-                      s === SCREENS.HISTORY || s === SCREENS.IMAGE;
+                      s === SCREENS.HISTORY || s === SCREENS.IMAGE ||
+                      s === SCREENS.AUDIO;
   if (!isAppScreen) {
     nav.setVisible(false);
     return;
@@ -406,6 +410,11 @@ function refreshNav() {
 }
 
 function setScreen(name) {
+  // Если уходим с экрана аудио — останавливаем воспроизведение.
+  const prev = getState().screen;
+  if (prev === SCREENS.AUDIO && name !== SCREENS.AUDIO) {
+    try { audioScreen.close(); } catch {}
+  }
   for (const [key, id] of Object.entries(SCREEN_IDS)) {
     document.getElementById(id).classList.toggle("hidden", key !== name);
   }
@@ -422,6 +431,14 @@ async function goBack() {
 
   if (screen === SCREENS.IMAGE) {
     imageScreen.close();
+    setState({ openFile: null });
+    setScreen(SCREENS.FILES);
+    renderFiles();
+    return;
+  }
+
+  if (screen === SCREENS.AUDIO) {
+    audioScreen.close();
     setState({ openFile: null });
     setScreen(SCREENS.FILES);
     renderFiles();
@@ -2083,6 +2100,9 @@ async function openBinaryFile(file) {
   if (isImagePath(file.path)) {
     return openImage(file);
   }
+  if (isAudioPath(file.path)) {
+    return openAudio(file);
+  }
 
   await dialogs.alert({
     title: "Бинарный файл",
@@ -2196,6 +2216,46 @@ async function openImage(file) {
     imageScreen.open(file.path, blob);
     setState({ openFile: { path: file.path } });
     setScreen(SCREENS.IMAGE);
+    setStatus("");
+  } catch (e) {
+    setStatus("Не удалось открыть: " + e.message, true);
+  }
+}
+
+async function openAudio(file) {
+  const { octokit, repo, cloned, mode } = getState();
+  if (!octokit || !repo) return;
+
+  setStatus(`Загрузка ${file.path}...`);
+  try {
+    let blob = null;
+
+    // Local — читаем из IndexedDB напрямую, включая локально изменённые файлы.
+    if (mode === "local" && cloned) {
+      const entry = await storage.getFile(cloned.key, file.path);
+      if (entry && entry.isBinary) {
+        const bytes = base64ToBytes(entry.content);
+        blob = new Blob([bytes]);
+      }
+    }
+
+    // Если локально не нашли — берём с GitHub по SHA.
+    if (!blob) {
+      let sha = file.sha;
+      if (!sha && mode === "local" && cloned) {
+        const entry = await storage.getFile(cloned.key, file.path);
+        sha = entry?.sha;
+      }
+      if (!sha) {
+        setStatus("Нет данных для воспроизведения", true);
+        return;
+      }
+      blob = await getBlobRaw(octokit, repo.owner, repo.name, sha);
+    }
+
+    audioScreen.open(file.path, blob);
+    setState({ openFile: { path: file.path } });
+    setScreen(SCREENS.AUDIO);
     setStatus("");
   } catch (e) {
     setStatus("Не удалось открыть: " + e.message, true);
@@ -2500,6 +2560,9 @@ async function openFile(file) {
   }
   if (isImagePath(file.path)) {
     return openImage(file);
+  }
+  if (isAudioPath(file.path)) {
+    return openAudio(file);
   }
 
   // Сохраняем содержимое предыдущей вкладки, если есть несохранённые правки.
