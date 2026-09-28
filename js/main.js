@@ -2070,8 +2070,8 @@ async function openImage(file) {
       blob = await getBlobRaw(octokit, repo.owner, repo.name, sha);
     }
 
-    // PSD/PSB — браузер их не умеет рисовать. Достаём встроенное превью
-    // и показываем его. Если в файле превью нет — сообщаем об этом.
+    // PSD/PSB — браузер их не умеет рисовать. Пытаемся показать полное
+    // изображение через @webtoon/psd. Если не получается — встроенное превью.
     const ext = (file.path.split(".").pop() || "").toLowerCase();
     if (ext === "psd" || ext === "psb") {
       const buf = new Uint8Array(await blob.arrayBuffer());
@@ -2086,33 +2086,62 @@ async function openImage(file) {
       }
 
       const MAX_DIM = 4096;
+      let useFull = true;
       if (info.width > MAX_DIM || info.height > MAX_DIM) {
         const ok = await dialogs.confirm({
           title: "Файл слишком большой",
           text:
             file.path + "\n\n" +
             "Размер документа: " + info.width + " × " + info.height + ".\n\n" +
-            "Будет показано уменьшенное превью из файла, а не оригинал.",
-          okText: "Открыть",
-          cancelText: "Отмена",
+            "Полное изображение может занять много времени и памяти. Показать полное изображение?",
+          okText: "Полное изображение",
+          cancelText: "Показать превью",
         });
-        if (!ok) { setStatus(""); return; }
+        if (!ok) useFull = false;
       }
 
-      const preview = extractPsdThumbnail(buf);
-      if (!preview) {
-        await dialogs.alert({
-          title: "Превью недоступно",
-          text:
-            file.path + "\n\n" +
-            "Размер документа: " + info.width + " × " + info.height + ".\n\n" +
-            "В файле нет встроенного превью. Откройте его в Photoshop " +
-            "и сохраните с включённой опцией «Максимальная совместимость».",
-        });
-        setStatus("");
-        return;
+      if (useFull) {
+        try {
+          const { default: Psd } = await import("https://esm.sh/@webtoon/psd@0.4.0");
+          const psdFile = Psd.parse(buf.buffer);
+          const compositeBuffer = await psdFile.composite();
+          const imageData = new ImageData(compositeBuffer, psdFile.width, psdFile.height);
+          const canvas = document.createElement("canvas");
+          canvas.width = psdFile.width;
+          canvas.height = psdFile.height;
+          const ctx = canvas.getContext("2d");
+          ctx.putImageData(imageData, 0, 0);
+          blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+          if (!blob) throw new Error("Canvas toBlob failed");
+        } catch (e) {
+          console.warn("Полное изображение не удалось:", e);
+          const ok = await dialogs.confirm({
+            title: "Не удалось показать полное изображение",
+            text: "Показать встроенное превью?",
+            okText: "Показать превью",
+            cancelText: "Отмена",
+          });
+          if (!ok) { setStatus(""); return; }
+          useFull = false;
+        }
       }
-      blob = preview;
+
+      if (!useFull) {
+        const preview = extractPsdThumbnail(buf);
+        if (!preview) {
+          await dialogs.alert({
+            title: "Превью недоступно",
+            text:
+              file.path + "\n\n" +
+              "Размер документа: " + info.width + " × " + info.height + ".\n\n" +
+              "В файле нет встроенного превью. Откройте его в Photoshop " +
+              "и сохраните с включённой опцией «Максимальная совместимость».",
+          });
+          setStatus("");
+          return;
+        }
+        blob = preview;
+      }
     }
 
     imageScreen.open(file.path, blob);
