@@ -455,16 +455,6 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
       document.documentElement.style.setProperty("--editor-tab-size", String(getEditorTabSize()));
     } catch (e) { console.warn("editor: tabsize", e); }
 
-    // Шрифт: через data-атрибут на <html>. CSS сам подставит нужную
-    // font-family для #file-content и #file-highlight с !important.
-    // Так шрифт применяется даже если эта функция не найдёт элементы
-    // напрямую или что-то пойдёт не так с inline-стилями.
-    try {
-      const fam = getEditorFontFamily();
-      const val = (fam === "cascadia" || fam === "jetbrains") ? fam : "system";
-      document.documentElement.dataset.editorFont = val;
-    } catch (e) { console.warn("editor: font", e); }
-
     renderHighlight();
   }
 
