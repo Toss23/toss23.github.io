@@ -1,18 +1,20 @@
 import { $ } from "@core/dom.js";
 import { parseUnityYaml, buildSceneModel, classDisplayName } from "@api/unity-yaml.js";
+import { getPrefabMap, loadPrefabBoundingBox } from "@api/unity-prefabs.js";
+import { showBusy, hideBusy, updateBusyText } from "@ui/busy.js";
 
-// Read-only просмотр сцены Unity: иерархия сверху (сворачиваемая, 5 строк
-// со скроллом), 2D-вид XY по центру, инспектор снизу (закрыт по умолчанию,
-// открывается при выборе объекта). На сцене рисуются только SpriteRenderer
-// (заливка цветом) и Canvas (рамка). Кнопки управления панелями создаются
-// из JS — чтобы работать независимо от состояния index.html.
+// Read-only просмотр сцены Unity.
+// Иерархия сверху (сворачиваемая, ~5 строк со скроллом), 2D-вид XY
+// по центру, инспектор снизу (закрыт по умолчанию).
+// На сцене рисуются только объекты с SpriteRenderer (свои или
+// полученные из резолва префабов). Canvas и прочее — только в иерархии.
+// Кнопки управления панелями создаются из JS — не зависят от index.html.
 export function initUnitySceneScreen() {
   const pathEl = $("unity-scene-path");
   const hierEl = $("unity-hierarchy-list");
   const canvasEl = $("unity-canvas");
   const inspectorEl = $("unity-inspector-body");
 
-  // Панели ищем и по id (если HTML уже обновлён), и по классу (старый HTML).
   const hierarchyPanel = $("unity-hierarchy-panel") || document.querySelector(".unity-hierarchy");
   const inspectorPanel = $("unity-inspector-panel") || document.querySelector(".unity-inspector");
 
@@ -23,6 +25,7 @@ export function initUnitySceneScreen() {
   let view = { cx: 0, cy: 0, scale: 40 };
   let hierarchyToggleBtn = null;
   let inspectorCloseButton = null;
+  let generation = 0;
 
   /* ---------- Стили и кнопки панелей ---------- */
 
@@ -115,8 +118,7 @@ export function initUnitySceneScreen() {
   }
 
   function isDrawable(g) {
-    // На сцене рисуем только спрайты. Canvas и всё остальное —
-    // только в иерархии и в инспекторе.
+    // Только объекты со спрайтом. Canvas и прочее — не рисуем.
     return g.hasSprite && g.sizeX !== null && g.sizeY !== null &&
            g.sizeX > 0.001 && g.sizeY > 0.001;
   }
@@ -182,7 +184,6 @@ export function initUnitySceneScreen() {
     const viewMinY = view.cy - H / 2 / view.scale;
     const viewMaxY = view.cy + H / 2 / view.scale;
 
-    // Сетка
     ctx.strokeStyle = "#2a2a2a";
     ctx.lineWidth = 1;
     const startX = Math.floor(viewMinX / gridStep) * gridStep;
@@ -198,7 +199,6 @@ export function initUnitySceneScreen() {
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
 
-    // Оси
     ctx.strokeStyle = "#3e5a78";
     const yAxis = toScreen(0, viewMinY);
     const xAxis = toScreen(viewMinX, 0);
@@ -220,20 +220,18 @@ export function initUnitySceneScreen() {
       const y0 = p.y - h / 2;
       const isSel = g.fileID === selectedFileID;
 
-      if (g.hasSprite) {
-        const c = g.spriteColor || { r: 1, g: 1, b: 1, a: 1 };
-        const cr = Math.round((c.r || 0) * 255);
-        const cg = Math.round((c.g || 0) * 255);
-        const cb = Math.round((c.b || 0) * 255);
-        const ca = c.a === undefined ? 1 : c.a;
-        ctx.fillStyle = "rgba(" + cr + "," + cg + "," + cb + "," + (0.25 * ca) + ")";
-        ctx.fillRect(x0, y0, w, h);
-        ctx.strokeStyle = isSel
-          ? "#ffb454"
-          : "rgba(" + cr + "," + cg + "," + cb + "," + Math.min(1, ca + 0.3) + ")";
-        ctx.lineWidth = isSel ? 2 : 1;
-        ctx.strokeRect(x0, y0, w, h);
-      }
+      const c = g.spriteColor || { r: 1, g: 1, b: 1, a: 1 };
+      const cr = Math.round((c.r || 0) * 255);
+      const cg = Math.round((c.g || 0) * 255);
+      const cb = Math.round((c.b || 0) * 255);
+      const ca = c.a === undefined ? 1 : c.a;
+      ctx.fillStyle = "rgba(" + cr + "," + cg + "," + cb + "," + (0.25 * ca) + ")";
+      ctx.fillRect(x0, y0, w, h);
+      ctx.strokeStyle = isSel
+        ? "#ffb454"
+        : "rgba(" + cr + "," + cg + "," + cb + "," + Math.min(1, ca + 0.3) + ")";
+      ctx.lineWidth = isSel ? 2 : 1;
+      ctx.strokeRect(x0, y0, w, h);
 
       if (view.scale > 8 || isSel) {
         ctx.fillStyle = isSel ? "#fff" : "#999";
@@ -248,6 +246,71 @@ export function initUnitySceneScreen() {
         ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+  }
+
+  /* ---------- Резолв префабов ---------- */
+
+  async function resolvePrefabs(myGen, context) {
+    if (!context || !context.getContent) return;
+    const instances = model ? model.gameObjects.filter((g) => g.isPrefabInstance && g.sourceGuid) : [];
+    if (!instances.length) return;
+
+    const token = showBusy("Поиск префабов…");
+    try {
+      updateBusyText("Сканирование .prefab.meta…");
+      const prefabMap = await getPrefabMap({
+        repoKey: context.repoKey,
+        headSha: context.headSha,
+        files: context.files,
+        getContent: context.getContent,
+        onProgress: (done, total) => {
+          if (total > 0) updateBusyText(`Сканирование: ${done} / ${total}`);
+        },
+      });
+
+      if (myGen !== generation) return;
+
+      const uniqueGuids = [...new Set(instances.map((g) => g.sourceGuid))];
+      const resolved = new Map();
+      let done = 0;
+      for (const guid of uniqueGuids) {
+        done++;
+        updateBusyText(`Чтение префабов: ${done} / ${uniqueGuids.length}`);
+        const prefabPath = prefabMap[guid];
+        if (!prefabPath) continue;
+        try {
+          const info = await loadPrefabBoundingBox({
+            prefabPath,
+            getContent: context.getContent,
+          });
+          if (info && info.hasSprite) resolved.set(guid, info);
+        } catch (e) {
+          console.warn("prefab load:", prefabPath, e);
+        }
+      }
+
+      if (myGen !== generation) return;
+
+      // Применяем результаты к префаб-инстансам.
+      for (const pi of instances) {
+        const info = resolved.get(pi.sourceGuid);
+        if (!info) continue;
+        pi.hasSprite = true;
+        pi.spriteColor = info.color || { r: 1, g: 1, b: 1, a: 1 };
+        pi.sizeX = Math.abs(info.sizeX * pi.localScale.x);
+        pi.sizeY = Math.abs(info.sizeY * pi.localScale.y);
+      }
+
+      // Перерисовываем и, если префаб выбран, обновляем инспектор.
+      autoFit();
+      draw();
+      renderHierarchy();
+      if (selectedFileID) renderInspector();
+    } catch (e) {
+      console.warn("resolvePrefabs:", e);
+    } finally {
+      if (token) hideBusy(token);
     }
   }
 
@@ -402,6 +465,13 @@ export function initUnitySceneScreen() {
     body.appendChild(makeStaticField("Name", go.name));
     body.appendChild(makeVecField("Position", go.localPos, ["x", "y", "z"]));
     body.appendChild(makeVecField("Scale", go.localScale, ["x", "y", "z"]));
+
+    if (go.hasSprite && go.sizeX !== null) {
+      body.appendChild(makeStaticField(
+        "Bounding size",
+        fmtNum(go.sizeX) + " × " + fmtNum(go.sizeY)
+      ));
+    }
 
     const mods = pi.m_Modification && pi.m_Modification.m_Modifications;
     if (Array.isArray(mods) && mods.length) {
@@ -791,19 +861,20 @@ export function initUnitySceneScreen() {
   }
 
   return {
-    open(path, text) {
+    open(path, text, context) {
       if (pathEl) pathEl.textContent = path;
 
-      // Стили и кнопки панелей — создаём при первом открытии.
       injectStyles();
       ensureHierarchyToggle();
       ensureInspectorClose();
+
+      generation++;
+      const myGen = generation;
 
       const docs = parseUnityYaml(text);
       model = buildSceneModel(docs);
       selectedFileID = null;
 
-      // Инспектор закрыт, иерархия развёрнута.
       if (inspectorPanel) inspectorPanel.classList.add("closed");
       if (hierarchyPanel) hierarchyPanel.classList.remove("collapsed");
       if (hierarchyToggleBtn) {
@@ -814,8 +885,12 @@ export function initUnitySceneScreen() {
       renderHierarchy();
       renderInspector();
       syncView();
+
+      // Асинхронно подтягиваем размеры префабов.
+      if (context) resolvePrefabs(myGen, context);
     },
     close() {
+      generation++;
       model = null;
       selectedFileID = null;
       if (hierEl) hierEl.innerHTML = "";

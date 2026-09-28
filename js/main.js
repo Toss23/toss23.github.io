@@ -2410,8 +2410,17 @@ async function openUnityScene(file) {
       setStatus("Файл сцены не читается как текст", true);
       return;
     }
+    const { repo, branch, files, cloned, mode, baseHeadSha } = getState();
+    const repoKey = storage.makeRepoKey(repo.owner, repo.name, branch);
+    const headSha = mode === "local" && cloned ? cloned.headSha : baseHeadSha;
+    const context = {
+      repoKey,
+      headSha,
+      files,
+      getContent: (p) => getCurrentFileContent(p),
+    };
     setState({ openFile: { path: file.path } });
-    unitySceneScreen.open(file.path, content);
+    unitySceneScreen.open(file.path, content, context);
     setScreen(SCREENS.UNITY_SCENE);
     setStatus("");
   } catch (e) {
