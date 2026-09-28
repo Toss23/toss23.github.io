@@ -58,6 +58,8 @@ import { initCommitScreen } from "@screens/commit-screen.js";
 import { SCREENS, isImagePath } from "@core/config.js";
 import * as storage from "@core/storage.js";
 
+throw new Error("TEST: сломанный main.js — проверка кнопки восстановления");
+
 /* ---------- Утилиты ---------- */
 
 function isEmptyRepoError(e) {
