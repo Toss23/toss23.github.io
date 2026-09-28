@@ -142,13 +142,15 @@ function showRecoveryButton(owner, repo, branch) {
     document.head.appendChild(style);
   }
 
-  const link = document.createElement("a");
+  const link = document.createElement("button");
+  link.type = "button";
   link.id = "boot-recovery";
   link.className = "primary big";
-  link.href = "https://github.com/" + owner + "/" + repo + "/commits/" + branch;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  link.textContent = "🔗 Открыть историю коммитов на GitHub";
+  link.textContent = "🔗 Открыть историю коммитов";
+  link.addEventListener("click", () => {
+    const url = location.pathname + "?recovery=1";
+    location.href = url;
+  });
 
   const parent = (bootRetry && bootRetry.parentNode) || bootScreen;
   if (!parent) return;
@@ -179,6 +181,29 @@ async function tryShowRecovery() {
 
 async function boot() {
   if (bootRetry) bootRetry.classList.add("hidden");
+
+  // Режим восстановления — запускается по ?recovery=1, не грузит main.js.
+  const params = new URLSearchParams(location.search || "");
+  if (params.get("recovery") === "1") {
+    setStatus("Загрузка режима восстановления…");
+    try {
+      const mod = await import("./recovery.js");
+      if (mod && typeof mod.initRecovery === "function") {
+        hideBoot();
+        await mod.initRecovery();
+        return;
+      }
+      throw new Error("initRecovery не найден");
+    } catch (e) {
+      setStatus("Не удалось загрузить режим восстановления: " + (e.message || e), true);
+      if (bootRetry) {
+        bootRetry.classList.remove("hidden");
+        bootRetry.onclick = () => location.reload();
+      }
+      return;
+    }
+  }
+
   setStatus("Загрузка ядра приложения…");
 
   const ok = await tryLoadMain();
