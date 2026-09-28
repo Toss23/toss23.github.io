@@ -270,6 +270,8 @@ export function initUnitySceneScreen() {
       });
       const prefabMap = map.guidToPath || {};
       const kindByGuid = map.kindByGuid || {};
+      const allGuids = Object.keys(prefabMap);
+      console.log("[unity-scene] в карте", allGuids.length, "guid'ов");
 
       if (myGen !== generation) return;
 
@@ -285,7 +287,11 @@ export function initUnitySceneScreen() {
         const prefabPath = prefabMap[guid];
         const kind = kindByGuid[guid] || "prefab";
         if (!prefabPath) {
-          console.warn("[unity-scene] guid не найден в карте:", guid);
+          console.warn(
+            "[unity-scene] guid не найден в карте:", guid,
+            "· в карте", Object.keys(prefabMap).length, "записей.",
+            "Проверьте, что .meta файл для этого ассета залит в репозиторий."
+          );
           continue;
         }
         console.log("[unity-scene] резолв:", guid, "kind:", kind, "→", prefabPath);

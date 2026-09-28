@@ -17,19 +17,12 @@ const CACHE_VERSION = "v2";
 const MAX_DEPTH = 6;
 const DEFAULT_PPU = 100;
 
-// Какие .meta сканируем. Только те, что могут быть целью ссылок из сцены.
-const KNOWN_META_EXT = [
-  "prefab.meta",
-  "psb.meta",
-  "psd.meta",
-  "png.meta",
-  "jpg.meta",
-  "jpeg.meta",
-  "tga.meta",
-  "gif.meta",
-  "bmp.meta",
-  "asset.meta",
-];
+// Сканируем все .meta файлы — не только известные расширения.
+// Guid может быть у чего угодно (.prefab, .psb, .controller, .anim,
+// .mat, .asset, .cs, …), и нам важно не пропустить цель ссылки.
+function isMetaFile(path) {
+  return typeof path === "string" && path.toLowerCase().endsWith(".meta");
+}
 
 function makeCacheKey(repoKey, headSha) {
   return CACHE_PREFIX + CACHE_VERSION + ":" + (repoKey || "repo") + "@" + (headSha || "unknown");
@@ -49,6 +42,18 @@ function detectKind(path) {
   return "other";
 }
 
+// Битовая маска первого байта PNG/JPEG/PSD — чтобы не пытаться парсить
+// как картинку то, что ею не является (например, .controller).
+function looksLikeImage(kind, bytes) {
+  if (!bytes || bytes.length < 4) return false;
+  if (kind === "png") return bytes[0] === 0x89 && bytes[1] === 0x50;
+  if (kind === "jpg") return bytes[0] === 0xFF && bytes[1] === 0xD8;
+  if (kind === "psd" || kind === "psb") {
+    return bytes[0] === 0x38 && bytes[1] === 0x42 && bytes[2] === 0x50 && bytes[3] === 0x53;
+  }
+  return true;
+}
+
 export async function getPrefabMap({ repoKey, headSha, files, getContent, onProgress }) {
   const key = makeCacheKey(repoKey, headSha);
 
@@ -62,12 +67,18 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
     console.warn("prefab map cache read:", e);
   }
 
-  const metaFiles = (files || []).filter((f) => {
-    if (!f || typeof f.path !== "string") return false;
-    const lower = f.path.toLowerCase();
-    return KNOWN_META_EXT.some((ext) => lower.endsWith("." + ext));
-  });
-  console.log("[prefabs] найдено .meta для сканирования:", metaFiles.length);
+  const allFiles = files || [];
+  const metaFiles = allFiles.filter((f) => f && isMetaFile(f.path));
+  const otherFiles = allFiles.length - metaFiles.length;
+  console.log(
+    "[prefabs] всего файлов:", allFiles.length,
+    "· .meta:", metaFiles.length,
+    "· прочих:", otherFiles
+  );
+  if (metaFiles.length === 0) {
+    console.warn("[prefabs] в репозитории не найдено ни одного .meta файла. " +
+      "Guid-ссылки разрешить не получится.");
+  }
 
   const guidToPath = {};
   const kindByGuid = {};
@@ -91,7 +102,14 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
     } catch { skipped++; }
   }
 
-  console.log("[prefabs] карта построена, записей:", Object.keys(guidToPath).length, "пропущено:", skipped);
+  const totalEntries = Object.keys(guidToPath).length;
+  console.log("[prefabs] карта построена, записей:", totalEntries, "пропущено:", skipped);
+  if (totalEntries > 0 && totalEntries <= 50) {
+    // Небольшая карта — покажем её целиком, чтобы можно было сверить вручную.
+    for (const [g, p] of Object.entries(guidToPath)) {
+      console.log("[prefabs]   ", g, "→", p);
+    }
+  }
 
   const result = { guidToPath, kindByGuid, builtAt: Date.now() };
   try {
@@ -153,6 +171,8 @@ async function readAssetSize(kind, getContent, assetPath) {
     } else {
       return null;
     }
+
+    if (!looksLikeImage(kind, bytes)) return null;
 
     if (kind === "psb" || kind === "psd") {
       const info = readPsdInfo(bytes);
