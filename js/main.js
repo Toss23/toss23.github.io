@@ -3024,6 +3024,27 @@ async function openCommit(initialMessage) {
   });
 
   if (filtered.length === 0) { setStatus("Нет изменений"); return; }
+
+  // Предупреждение: коммит затрагивает boot.js — файл, который
+  // запускает приложение и содержит кнопку восстановления.
+  const touchesBoot = filtered.some((it) => it.path === "js/boot.js");
+  if (touchesBoot) {
+    const ok = await dialogs.confirm({
+      title: "Коммит затрагивает boot.js",
+      text:
+        "boot.js — это файл, который запускает приложение и содержит " +
+        "кнопку восстановления на случай ошибки загрузки.\n\n" +
+        "Если после этого коммита приложение сломается, кнопка " +
+        "восстановления может не сработать. Откатывать придётся " +
+        "вручную через историю коммитов на GitHub.\n\n" +
+        "Продолжить коммит?",
+      okText: "Продолжить",
+      cancelText: "Отмена",
+      danger: true,
+    });
+    if (!ok) return;
+  }
+
   commitScreen.open(filtered, { mode, message: initialMessage });
 }
 

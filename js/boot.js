@@ -59,6 +59,114 @@ async function checkDep(id, url) {
   return false;
 }
 
+// ---- Восстановление: определение владельца сайта ----
+
+// Владелец GitHub Pages-сайта выводится из hostname.
+// Для «user page» вида owner.github.io — это owner.
+// Кастомные домены не поддержаны (вернёт null).
+function detectSiteOwner() {
+  const host = (location.hostname || "").toLowerCase();
+  const m = host.match(/^([a-z0-9-]+)\.github\.io$/);
+  return m ? m[1] : null;
+}
+
+function getStoredToken() {
+  try { return localStorage.getItem("gh_token") || null; }
+  catch { return null; }
+}
+
+async function fetchGhUser(token) {
+  try {
+    const res = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: "Bearer " + token,
+        Accept: "application/vnd.github+json",
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+// Ищем репозиторий сайта и проверяем право push.
+// Кандидаты: owner.github.io (user page) и первый сегмент пути (project page).
+async function findSiteRepo(token, owner) {
+  const candidates = [owner + ".github.io"];
+  const seg = (location.pathname || "/").replace(/^\/+/, "").split("/")[0];
+  if (seg && seg !== "index.html" && !seg.includes(".")) {
+    candidates.push(seg);
+  }
+  for (const repo of candidates) {
+    try {
+      const res = await fetch(
+        "https://api.github.com/repos/" + owner + "/" + repo,
+        {
+          headers: {
+            Authorization: "Bearer " + token,
+            Accept: "application/vnd.github+json",
+          },
+          cache: "no-store",
+        }
+      );
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data && data.permissions && data.permissions.push) {
+        return { repo, branch: data.default_branch || "main" };
+      }
+    } catch {}
+  }
+  return null;
+}
+
+function showRecoveryButton(owner, repo, branch) {
+  if (document.getElementById("boot-recovery")) return;
+
+  const link = document.createElement("a");
+  link.id = "boot-recovery";
+  link.href = "https://github.com/" + owner + "/" + repo + "/commits/" + branch;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = "🔗 Открыть историю коммитов на GitHub";
+  link.style.cssText = [
+    "display:inline-block",
+    "margin-top:12px",
+    "padding:10px 16px",
+    "border-radius:6px",
+    "background:#2d7d3a",
+    "color:#fff",
+    "text-decoration:none",
+    "font-weight:600",
+    "font-size:14px",
+  ].join(";");
+
+  const parent = (bootRetry && bootRetry.parentNode) || bootScreen;
+  if (!parent) return;
+  if (bootRetry && bootRetry.nextSibling) {
+    parent.insertBefore(link, bootRetry.nextSibling);
+  } else {
+    parent.appendChild(link);
+  }
+}
+
+// Показывает кнопку восстановления, если залогиненный пользователь —
+// владелец сайта и имеет права на запись в репозиторий.
+async function tryShowRecovery() {
+  const owner = detectSiteOwner();
+  if (!owner) return;
+  const token = getStoredToken();
+  if (!token) return;
+
+  const user = await fetchGhUser(token);
+  if (!user || !user.login) return;
+  if (user.login.toLowerCase() !== owner.toLowerCase()) return;
+
+  const target = await findSiteRepo(token, owner);
+  if (!target) return;
+
+  showRecoveryButton(owner, target.repo, target.branch);
+}
+
 async function boot() {
   if (bootRetry) bootRetry.classList.add("hidden");
   setStatus("Загрузка ядра приложения…");
@@ -98,6 +206,10 @@ async function boot() {
     bootRetry.classList.remove("hidden");
     bootRetry.onclick = () => location.reload();
   }
+
+  // Если залогинен владелец сайта — добавить кнопку восстановления,
+  // ведущую на историю коммитов GitHub.
+  try { await tryShowRecovery(); } catch (e) { console.warn("recovery:", e); }
 }
 
 boot();
