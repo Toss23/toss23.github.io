@@ -290,28 +290,37 @@ export async function loadPrefabBoundingBox({
       console.warn("[prefabs] meta read:", prefabPath, e.message);
     }
 
-    // 2. Если .meta дала список спрайтов — считаем bbox по ним.
+    // 2. Если .meta дала список спрайтов — считаем bbox и собираем
+    //    отдельные прямоугольники. Позиция центра — из spritePosition
+    //    (в системе координат Photoshop-документа), размер — из rect.
     if (metaInfo && metaInfo.sprites.length) {
+      const ppu = metaInfo.ppu;
+      const spriteRects = [];
       let minX = Infinity, maxX = -Infinity;
       let minY = Infinity, maxY = -Infinity;
       for (const s of metaInfo.sprites) {
-        const x0 = s.rect.x / metaInfo.ppu;
-        const y0 = s.rect.y / metaInfo.ppu;
-        const x1 = (s.rect.x + s.rect.width) / metaInfo.ppu;
-        const y1 = (s.rect.y + s.rect.height) / metaInfo.ppu;
+        const w = s.rect.width / ppu;
+        const h = s.rect.height / ppu;
+        const cx = s.centerX / ppu;
+        const cy = s.centerY / ppu;
+        const x0 = cx - w / 2;
+        const y0 = cy - h / 2;
+        const x1 = cx + w / 2;
+        const y1 = cy + h / 2;
+        spriteRects.push({ x: cx, y: cy, w, h, name: s.name });
         if (x0 < minX) minX = x0;
         if (y0 < minY) minY = y0;
         if (x1 > maxX) maxX = x1;
         if (y1 > maxY) maxY = y1;
       }
       console.log(
-        "[prefabs] bbox атласа:",
-        (maxX - minX).toFixed(2), "×", (maxY - minY).toFixed(2),
-        "·", metaInfo.sprites.length, "спрайтов"
+        "[prefabs] атлас:", metaInfo.sprites.length, "спрайтов · bbox:",
+        (maxX - minX).toFixed(2), "×", (maxY - minY).toFixed(2)
       );
       return {
         hasSprite: true,
         minX, minY, maxX, maxY,
+        sprites: spriteRects,
         color: { r: 1, g: 1, b: 1, a: 1 },
         spriteCount: metaInfo.sprites.length,
       };
@@ -359,8 +368,9 @@ export async function loadPrefabBoundingBox({
   let minY = Infinity, maxY = -Infinity;
   let spriteCount = 0;
   let firstColor = null;
+  const sprites = [];
 
-  function absorb(cx, cy, hw, hh, color) {
+  function absorb(cx, cy, hw, hh, color, name) {
     const x0 = cx - hw, x1 = cx + hw;
     const y0 = cy - hh, y1 = cy + hh;
     if (x0 < minX) minX = x0;
@@ -368,11 +378,12 @@ export async function loadPrefabBoundingBox({
     if (y0 < minY) minY = y0;
     if (y1 > maxY) maxY = y1;
     if (!firstColor && color) firstColor = color;
+    sprites.push({ x: cx, y: cy, w: hw * 2, h: hh * 2, name: name || "" });
   }
 
   for (const g of model.gameObjects) {
     if (!g.hasSprite || g.sizeX === null || g.sizeY === null) continue;
-    absorb(g.worldX, g.worldY, g.sizeX / 2, g.sizeY / 2, g.spriteColor);
+    absorb(g.worldX, g.worldY, g.sizeX / 2, g.sizeY / 2, g.spriteColor, g.name);
     spriteCount++;
   }
 
@@ -435,6 +446,20 @@ export async function loadPrefabBoundingBox({
       if (nyMaxY > maxY) maxY = nyMaxY;
       if (!firstColor && nested.color) firstColor = nested.color;
       spriteCount += nested.spriteCount || 0;
+
+      // Пробрасываем прямоугольники вложенных спрайтов с учётом
+      // локального сдвига и масштаба инстанса.
+      if (Array.isArray(nested.sprites)) {
+        for (const s of nested.sprites) {
+          sprites.push({
+            x: g.localPos.x + s.x * sx,
+            y: g.localPos.y + s.y * sy,
+            w: s.w * Math.abs(sx),
+            h: s.h * Math.abs(sy),
+            name: s.name,
+          });
+        }
+      }
     }
   }
 
@@ -445,6 +470,7 @@ export async function loadPrefabBoundingBox({
   return {
     hasSprite: true,
     minX, minY, maxX, maxY,
+    sprites,
     color: firstColor || { r: 1, g: 1, b: 1, a: 1 },
     spriteCount,
   };

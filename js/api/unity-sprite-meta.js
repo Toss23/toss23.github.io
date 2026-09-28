@@ -1,10 +1,10 @@
 // Парсер .meta для спрайт-ассетов Unity (.psb, .psd, .png, .jpg, .tga).
 // Извлекает spritePixelsToUnits (PPU) и список спрайтов атласа —
-// каждый со своим spriteID и прямоугольником в пикселях.
+// каждый со своим spriteID, rect (область в атласе) и spritePosition
+// (позиция центра на холсте Photoshop-документа).
 //
-// Используется резолвером префабов: когда SpriteRenderer или PrefabInstance
-// ссылается на атлас, размер берётся не из всего файла, а из bbox его
-// спрайтов.
+// Именно spritePosition использует Unity при раскладке частей персонажа:
+// rect задаёт, откуда брать пиксели, spritePosition — где рисовать.
 
 import yaml from "https://esm.sh/js-yaml@4";
 
@@ -31,6 +31,10 @@ export function parseSpriteMeta(text) {
       const w = Number(s.rect.width) || 0;
       const h = Number(s.rect.height) || 0;
       if (w <= 0 || h <= 0) continue;
+      const sp = s.spritePosition || null;
+      const centerX = sp ? Number(sp.x) || 0 : (Number(s.rect.x) || 0) + w / 2;
+      const centerY = sp ? Number(sp.y) || 0 : (Number(s.rect.y) || 0) + h / 2;
+      const pivot = s.pivot || null;
       sprites.push({
         name: s.name || "",
         spriteID: s.spriteID || "",
@@ -40,6 +44,12 @@ export function parseSpriteMeta(text) {
           width: w,
           height: h,
         },
+        centerX,
+        centerY,
+        pivot: pivot ? {
+          x: Number(pivot.x) || 0.5,
+          y: Number(pivot.y) || 0.5,
+        } : { x: 0.5, y: 0.5 },
       });
     }
   };

@@ -213,11 +213,6 @@ export function initUnitySceneScreen() {
 
     for (const g of model.gameObjects) {
       if (!isDrawable(g)) continue;
-      const p = toScreen(g.worldX, g.worldY);
-      const w = Math.max(3, g.sizeX * view.scale);
-      const h = Math.max(3, g.sizeY * view.scale);
-      const x0 = p.x - w / 2;
-      const y0 = p.y - h / 2;
       const isSel = g.fileID === selectedFileID;
 
       const c = g.spriteColor || { r: 1, g: 1, b: 1, a: 1 };
@@ -225,6 +220,41 @@ export function initUnitySceneScreen() {
       const cg = Math.round((c.g || 0) * 255);
       const cb = Math.round((c.b || 0) * 255);
       const ca = c.a === undefined ? 1 : c.a;
+
+      // Если у объекта несколько спрайтов атласа — рисуем каждый отдельно,
+      // силуэт по позициям частей из Photoshop-документа.
+      if (Array.isArray(g.subRects) && g.subRects.length) {
+        for (const r of g.subRects) {
+          const rp = toScreen(r.x, r.y);
+          const rw = Math.max(2, r.w * view.scale);
+          const rh = Math.max(2, r.h * view.scale);
+          const rx0 = rp.x - rw / 2;
+          const ry0 = rp.y - rh / 2;
+          ctx.fillStyle = "rgba(" + cr + "," + cg + "," + cb + "," + (isSel ? 0.35 : 0.2) + ")";
+          ctx.fillRect(rx0, ry0, rw, rh);
+          ctx.strokeStyle = isSel
+            ? "#ffb454"
+            : "rgba(" + cr + "," + cg + "," + cb + "," + Math.min(1, ca + 0.2) + ")";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(rx0, ry0, rw, rh);
+        }
+        const p = toScreen(g.worldX, g.worldY);
+        if (view.scale > 8 || isSel) {
+          ctx.fillStyle = isSel ? "#fff" : "#999";
+          ctx.font = "11px ui-monospace, monospace";
+          const labelOffset = (g.sizeY * view.scale) / 2 + 4;
+          ctx.fillText(g.name, p.x + 8, p.y - labelOffset);
+        }
+        continue;
+      }
+
+      // Обычный спрайт — один прямоугольник.
+      const p = toScreen(g.worldX, g.worldY);
+      const w = Math.max(3, g.sizeX * view.scale);
+      const h = Math.max(3, g.sizeY * view.scale);
+      const x0 = p.x - w / 2;
+      const y0 = p.y - h / 2;
+
       ctx.fillStyle = "rgba(" + cr + "," + cg + "," + cb + "," + (0.25 * ca) + ")";
       ctx.fillRect(x0, y0, w, h);
       ctx.strokeStyle = isSel
@@ -339,6 +369,20 @@ export function initUnitySceneScreen() {
         // чтобы префаб отрисовался там, где его видно в Unity.
         pi.worldX = pi.localPos.x + cx * pi.localScale.x;
         pi.worldY = pi.localPos.y + cy * pi.localScale.y;
+
+        // Если у префаба больше одного спрайта (атлас) — сохраняем
+        // отдельные прямоугольники, чтобы нарисовать силуэт по частям.
+        if (Array.isArray(info.sprites) && info.sprites.length > 1) {
+          pi.subRects = info.sprites.map((s) => ({
+            x: pi.localPos.x + s.x * pi.localScale.x,
+            y: pi.localPos.y + s.y * pi.localScale.y,
+            w: s.w * Math.abs(pi.localScale.x),
+            h: s.h * Math.abs(pi.localScale.y),
+            name: s.name,
+          }));
+        } else {
+          pi.subRects = null;
+        }
       }
 
       // Перерисовываем и, если префаб выбран, обновляем инспектор.
