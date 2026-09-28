@@ -22,6 +22,14 @@ export const SCREENS = {
   IMAGE: "image",
 };
 
+// Резервный адрес репозитория приложения. Используется, когда hostname
+// не вида *.github.io (например, кастомный домен). Должен совпадать
+// с APP_REPO_FALLBACK в js/boot.js.
+export const APP_REPO = {
+  owner: "Toss23",
+  repo: "toss23.github.io",
+};
+
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "psd", "psb"]);
 
 export function isImagePath(path) {

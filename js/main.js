@@ -55,7 +55,7 @@ import { initHistoryScreen } from "@screens/history-screen.js";
 import { initImageScreen } from "@screens/image-screen.js";
 import { initCommitScreen } from "@screens/commit-screen.js";
 
-import { SCREENS, isImagePath } from "@core/config.js";
+import { SCREENS, isImagePath, APP_REPO } from "@core/config.js";
 import * as storage from "@core/storage.js";
 
 /* ---------- Утилиты ---------- */
@@ -66,6 +66,30 @@ function isEmptyRepoError(e) {
   return msg.includes("repository is empty") ||
          msg.includes("git repository is empty") ||
          (e.status === 409 && msg.includes("empty"));
+}
+
+// Определяет репозиторий приложения. Сначала — по hostname
+// (owner.github.io). Если не подходит (кастомный домен) — берём
+// резервную константу APP_REPO из config.js.
+function detectAppRepo() {
+  const host = (location.hostname || "").toLowerCase();
+  const m = host.match(/^([a-z0-9-]+)\.github\.io$/);
+  if (m) return { owner: m[1], repo: m[1] + ".github.io" };
+  if (APP_REPO && APP_REPO.owner && APP_REPO.repo) {
+    return { owner: APP_REPO.owner, repo: APP_REPO.repo };
+  }
+  return null;
+}
+
+// Текущий открытый репозиторий — это репозиторий приложения?
+function isAppRepo(repo) {
+  if (!repo || !repo.owner || !repo.name) return false;
+  const app = detectAppRepo();
+  if (!app) return false;
+  return (
+    repo.owner.toLowerCase() === app.owner.toLowerCase() &&
+    repo.name.toLowerCase() === app.repo.toLowerCase()
+  );
 }
 
 /* ---------- Инициализация ---------- */
@@ -2956,7 +2980,7 @@ async function revertAll() {
 /* ---------- Коммит ---------- */
 
 async function openCommit(initialMessage) {
-  const { mode, cloned, dirty, files, base, deleted } = getState();
+  const { mode, cloned, dirty, files, base, deleted, repo } = getState();
 
   if (mode === "local" && cloned) await flushDirtyToLocal();
 
@@ -3025,10 +3049,10 @@ async function openCommit(initialMessage) {
 
   if (filtered.length === 0) { setStatus("Нет изменений"); return; }
 
-  // Предупреждение: коммит затрагивает boot.js — файл, который
-  // запускает приложение и содержит кнопку восстановления.
+  // Предупреждение: коммит затрагивает boot.js в репозитории приложения.
+  // В чужих репозиториях, где случайно есть js/boot.js, не срабатывает.
   const touchesBoot = filtered.some((it) => it.path === "js/boot.js");
-  if (touchesBoot) {
+  if (touchesBoot && isAppRepo(repo)) {
     const ok = await dialogs.confirm({
       title: "Коммит затрагивает boot.js",
       text:

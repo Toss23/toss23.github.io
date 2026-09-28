@@ -3,6 +3,10 @@ const bootList = document.getElementById("boot-list");
 const bootStatus = document.getElementById("boot-status");
 const bootRetry = document.getElementById("boot-retry");
 
+// Резервный адрес репозитория приложения. Используется, если hostname
+// не вида *.github.io. Должен совпадать с APP_REPO в js/core/config.js.
+const APP_REPO_FALLBACK = { owner: "Toss23", repo: "toss23.github.io" };
+
 function setStatus(text, isError = false) {
   if (!bootStatus) return;
   bootStatus.textContent = text;
@@ -64,10 +68,14 @@ async function checkDep(id, url) {
 // Владелец GitHub Pages-сайта выводится из hostname.
 // Для «user page» вида owner.github.io — это owner.
 // Кастомные домены не поддержаны (вернёт null).
-function detectSiteOwner() {
+function detectAppRepo() {
   const host = (location.hostname || "").toLowerCase();
   const m = host.match(/^([a-z0-9-]+)\.github\.io$/);
-  return m ? m[1] : null;
+  if (m) return { owner: m[1], repo: m[1] + ".github.io" };
+  if (APP_REPO_FALLBACK && APP_REPO_FALLBACK.owner && APP_REPO_FALLBACK.repo) {
+    return { owner: APP_REPO_FALLBACK.owner, repo: APP_REPO_FALLBACK.repo };
+  }
+  return null;
 }
 
 function getStoredToken() {
@@ -91,16 +99,17 @@ async function fetchGhUser(token) {
 
 // Ищем репозиторий сайта и проверяем право push.
 // Кандидаты: owner.github.io (user page) и первый сегмент пути (project page).
-async function findSiteRepo(token, owner) {
-  const candidates = [owner + ".github.io"];
+async function findSiteRepo(token, app) {
+  const candidates = [app.repo];
+  // Если сайт раздаётся как project page, в URL есть сегмент с именем репо.
   const seg = (location.pathname || "/").replace(/^\/+/, "").split("/")[0];
-  if (seg && seg !== "index.html" && !seg.includes(".")) {
+  if (seg && seg !== "index.html" && !seg.includes(".") && seg !== app.repo) {
     candidates.push(seg);
   }
   for (const repo of candidates) {
     try {
       const res = await fetch(
-        "https://api.github.com/repos/" + owner + "/" + repo,
+        "https://api.github.com/repos/" + app.owner + "/" + repo,
         {
           headers: {
             Authorization: "Bearer " + token,
@@ -152,19 +161,19 @@ function showRecoveryButton(owner, repo, branch) {
 // Показывает кнопку восстановления, если залогиненный пользователь —
 // владелец сайта и имеет права на запись в репозиторий.
 async function tryShowRecovery() {
-  const owner = detectSiteOwner();
-  if (!owner) return;
+  const app = detectAppRepo();
+  if (!app) return;
   const token = getStoredToken();
   if (!token) return;
 
   const user = await fetchGhUser(token);
   if (!user || !user.login) return;
-  if (user.login.toLowerCase() !== owner.toLowerCase()) return;
+  if (user.login.toLowerCase() !== app.owner.toLowerCase()) return;
 
-  const target = await findSiteRepo(token, owner);
+  const target = await findSiteRepo(token, app);
   if (!target) return;
 
-  showRecoveryButton(owner, target.repo, target.branch);
+  showRecoveryButton(app.owner, target.repo, target.branch);
 }
 
 async function boot() {
