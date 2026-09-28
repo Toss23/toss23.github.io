@@ -509,7 +509,8 @@ body {
   border-right: 1px solid #333;
   overflow: hidden;
   position: relative;
-  font-family: var(--editor-font-family, ui-monospace, Menlo, Consolas, monospace);
+  /* Номера строк всегда на системном моно — шрифт кода их не касается. */
+  font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: var(--editor-font-size, 14px);
   line-height: 1.55;
   color: #606366;
@@ -558,8 +559,7 @@ body {
    разную ширину глифов — из-за этого курсор «уезжает» от текста.
    Отключаем лигатуры в обоих слоях. */
 #file-editor #file-content,
-#file-editor .editor-highlight,
-.editor-line-numbers {
+#file-editor .editor-highlight {
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0, "calt" 0, "dlig" 0;
 }

@@ -461,7 +461,14 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
     } else {
       stack = "ui-monospace, Menlo, Consolas, monospace";
     }
-    root.style.setProperty("--editor-font-family", stack);
+
+    // Применяем шрифт напрямую к слою кода (textarea + подсветка),
+    // минуя каскад CSS. Номера строк остаются на системном моно
+    // и выбранный шрифт кода на них не влияет.
+    const textareaEl = document.getElementById("file-content");
+    const highlightEl = document.getElementById("file-highlight");
+    if (textareaEl) textareaEl.style.fontFamily = stack;
+    if (highlightEl) highlightEl.style.fontFamily = stack;
 
     renderHighlight();
   }
