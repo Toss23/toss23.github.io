@@ -8,7 +8,6 @@ import { showBusy, hideBusy, updateBusyText } from "@ui/busy.js";
 // по центру, инспектор снизу (закрыт по умолчанию).
 // На сцене рисуются только объекты с SpriteRenderer (свои или
 // полученные из резолва префабов). Canvas и прочее — только в иерархии.
-// Кнопки управления панелями создаются из JS — не зависят от index.html.
 export function initUnitySceneScreen() {
   const pathEl = $("unity-scene-path");
   const hierEl = $("unity-hierarchy-list");
@@ -26,8 +25,6 @@ export function initUnitySceneScreen() {
   let hierarchyToggleBtn = null;
   let inspectorCloseButton = null;
   let generation = 0;
-
-  /* ---------- Стили и кнопки панелей ---------- */
 
   function injectStyles() {
     if (document.getElementById("unity-scene-styles")) return;
@@ -99,8 +96,6 @@ export function initUnitySceneScreen() {
     inspectorCloseButton = btn;
   }
 
-  /* ---------- Canvas ---------- */
-
   function resizeCanvas() {
     if (!canvasEl || !ctx) return;
     const rect = canvasEl.getBoundingClientRect();
@@ -118,7 +113,6 @@ export function initUnitySceneScreen() {
   }
 
   function isDrawable(g) {
-    // Только объекты со спрайтом. Canvas и прочее — не рисуем.
     return g.hasSprite && g.sizeX !== null && g.sizeY !== null &&
            g.sizeX > 0.001 && g.sizeY > 0.001;
   }
@@ -221,8 +215,39 @@ export function initUnitySceneScreen() {
       const cb = Math.round((c.b || 0) * 255);
       const ca = c.a === undefined ? 1 : c.a;
 
-      // Если у объекта несколько спрайтов атласа — рисуем каждый отдельно,
-      // силуэт по позициям частей из Photoshop-документа.
+      // 1. Есть декодированная картинка PSB/PSD — рисуем её.
+      if (g.bitmap) {
+        const p = toScreen(g.worldX, g.worldY);
+        const sx = Math.abs(g.localScale.x || 1);
+        const sy = Math.abs(g.localScale.y || 1);
+        const ppu = g.bitmapPPU || 100;
+        const wU = (g.bitmapW / ppu) * sx;
+        const hU = (g.bitmapH / ppu) * sy;
+        const wPx = Math.max(2, wU * view.scale);
+        const hPx = Math.max(2, hU * view.scale);
+        const bx = p.x - wPx / 2;
+        const by = p.y - hPx / 2;
+        try {
+          ctx.drawImage(g.bitmap, bx, by, wPx, hPx);
+        } catch (e) {
+          ctx.strokeStyle = "#f48771";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(bx, by, wPx, hPx);
+        }
+        if (isSel) {
+          ctx.strokeStyle = "#ffb454";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(bx, by, wPx, hPx);
+        }
+        if (view.scale > 8 || isSel) {
+          ctx.fillStyle = isSel ? "#fff" : "#999";
+          ctx.font = "11px ui-monospace, monospace";
+          ctx.fillText(g.name, bx + 6, by - 4);
+        }
+        continue;
+      }
+
+      // 2. Есть отдельные прямоугольники атласа — рисуем каждый.
       if (Array.isArray(g.subRects) && g.subRects.length) {
         for (const r of g.subRects) {
           const rp = toScreen(r.x, r.y);
@@ -248,7 +273,7 @@ export function initUnitySceneScreen() {
         continue;
       }
 
-      // Обычный спрайт — один прямоугольник.
+      // 3. Обычный спрайт — один прямоугольник.
       const p = toScreen(g.worldX, g.worldY);
       const w = Math.max(3, g.sizeX * view.scale);
       const h = Math.max(3, g.sizeY * view.scale);
@@ -279,8 +304,6 @@ export function initUnitySceneScreen() {
     }
   }
 
-  /* ---------- Резолв префабов ---------- */
-
   async function resolvePrefabs(myGen, context) {
     if (!context || !context.getContent) return;
     const instances = model ? model.gameObjects.filter((g) => g.isPrefabInstance && g.sourceGuid) : [];
@@ -307,7 +330,6 @@ export function initUnitySceneScreen() {
 
       const uniqueGuids = [...new Set(instances.map((g) => g.sourceGuid))];
       console.log("[unity-scene] префаб-инстансов:", instances.length, "уникальных guid:", uniqueGuids.length);
-      console.log("[unity-scene] guid'ы:", uniqueGuids);
 
       const resolved = new Map();
       let done = 0;
@@ -317,11 +339,7 @@ export function initUnitySceneScreen() {
         const prefabPath = prefabMap[guid];
         const kind = kindByGuid[guid] || "prefab";
         if (!prefabPath) {
-          console.warn(
-            "[unity-scene] guid не найден в карте:", guid,
-            "· в карте", Object.keys(prefabMap).length, "записей.",
-            "Проверьте, что .meta файл для этого ассета залит в репозиторий."
-          );
+          console.warn("[unity-scene] guid не найден в карте:", guid);
           continue;
         }
         console.log("[unity-scene] резолв:", guid, "kind:", kind, "→", prefabPath);
@@ -350,10 +368,6 @@ export function initUnitySceneScreen() {
 
       if (myGen !== generation) return;
 
-      // Применяем результаты к префаб-инстансам.
-      // info содержит minX/minY/maxX/maxY в локальных единицах префаба
-      // (уже с учётом вложенных трансформов), поэтому умножаем на
-      // масштаб инстанса и учитываем сдвиг через размер + центр.
       for (const pi of instances) {
         const info = resolved.get(pi.sourceGuid);
         if (!info) continue;
@@ -365,14 +379,16 @@ export function initUnitySceneScreen() {
         pi.spriteColor = info.color || { r: 1, g: 1, b: 1, a: 1 };
         pi.sizeX = Math.abs(w * pi.localScale.x);
         pi.sizeY = Math.abs(h * pi.localScale.y);
-        // Смещение центра относительно origin инстанса — учитываем,
-        // чтобы префаб отрисовался там, где его видно в Unity.
         pi.worldX = pi.localPos.x + cx * pi.localScale.x;
         pi.worldY = pi.localPos.y + cy * pi.localScale.y;
 
-        // Если у префаба больше одного спрайта (атлас) — сохраняем
-        // отдельные прямоугольники, чтобы нарисовать силуэт по частям.
-        if (Array.isArray(info.sprites) && info.sprites.length > 1) {
+        if (info.bitmap) {
+          pi.bitmap = info.bitmap;
+          pi.bitmapPPU = info.imagePPU || 100;
+          pi.bitmapW = info.imageWidth || info.bitmap.width;
+          pi.bitmapH = info.imageHeight || info.bitmap.height;
+          pi.subRects = null;
+        } else if (Array.isArray(info.sprites) && info.sprites.length > 1) {
           pi.subRects = info.sprites.map((s) => ({
             x: pi.localPos.x + s.x * pi.localScale.x,
             y: pi.localPos.y + s.y * pi.localScale.y,
@@ -380,12 +396,13 @@ export function initUnitySceneScreen() {
             h: s.h * Math.abs(pi.localScale.y),
             name: s.name,
           }));
+          pi.bitmap = null;
         } else {
           pi.subRects = null;
+          pi.bitmap = null;
         }
       }
 
-      // Перерисовываем и, если префаб выбран, обновляем инспектор.
       autoFit();
       draw();
       renderHierarchy();
@@ -396,8 +413,6 @@ export function initUnitySceneScreen() {
       if (token) hideBusy(token);
     }
   }
-
-  /* ---------- Иерархия ---------- */
 
   function renderHierarchy() {
     if (!hierEl) return;
@@ -465,8 +480,6 @@ export function initUnitySceneScreen() {
     renderInspector();
     draw();
   }
-
-  /* ---------- Инспектор ---------- */
 
   const SKIP_FIELDS = new Set([
     "m_ObjectHideFlags",
@@ -822,8 +835,6 @@ export function initUnitySceneScreen() {
     return n.toFixed(4).replace(/\.?0+$/, "");
   }
 
-  /* ---------- Hit test ---------- */
-
   function hitTest(mx, my) {
     if (!model) return null;
     for (let i = model.gameObjects.length - 1; i >= 0; i--) {
@@ -839,8 +850,6 @@ export function initUnitySceneScreen() {
     }
     return null;
   }
-
-  /* ---------- Управление видом ---------- */
 
   let dragState = null;
 
@@ -946,30 +955,23 @@ export function initUnitySceneScreen() {
   return {
     open(path, text, context) {
       if (pathEl) pathEl.textContent = path;
-
       injectStyles();
       ensureHierarchyToggle();
       ensureInspectorClose();
-
       generation++;
       const myGen = generation;
-
       const docs = parseUnityYaml(text);
       model = buildSceneModel(docs);
       selectedFileID = null;
-
       if (inspectorPanel) inspectorPanel.classList.add("closed");
       if (hierarchyPanel) hierarchyPanel.classList.remove("collapsed");
       if (hierarchyToggleBtn) {
         hierarchyToggleBtn.textContent = "▾";
         hierarchyToggleBtn.title = "Свернуть";
       }
-
       renderHierarchy();
       renderInspector();
       syncView();
-
-      // Асинхронно подтягиваем размеры префабов.
       if (context) resolvePrefabs(myGen, context);
     },
     close() {

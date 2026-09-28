@@ -1,26 +1,22 @@
 // Резолвер префабов и спрайт-ассетов Unity.
 // По guid находит ассет в репозитории:
 //   - .prefab      → рекурсивный обход с применением override'ов
-//   - .psb/.psd    → размеры из заголовка Photoshop-файла
-//   - .png/.jpg/.tga → размеры из заголовка изображения
+//   - .psb/.psd    → размеры + декодированная картинка через @webtoon/psd
+//   - .png/.jpg    → размеры из заголовка
 //
-// Пиксельные размеры делятся на PPU=100 (стандарт Unity), получаются
-// локальные единицы. Карта guid → { path, kind } кэшируется в IndexedDB,
-// ключ включает версию, чтобы старый кэш не мешал.
+// Возвращает { hasSprite, minX, minY, maxX, maxY, sprites[], bitmap? }.
 
 import { get as idbGet, set as idbSet } from "https://esm.sh/idb-keyval@6";
 import { parseUnityYaml, buildSceneModel } from "./unity-yaml.js";
 import { readPsdInfo } from "@core/psd-preview.js";
 import { parseSpriteMeta } from "./unity-sprite-meta.js";
+import { loadPsbImage } from "@core/psb-image.js";
 
 const CACHE_PREFIX = "unity_prefabs:";
 const CACHE_VERSION = "v3";
 const MAX_DEPTH = 6;
 const DEFAULT_PPU = 100;
 
-// Сканируем все .meta файлы — не только известные расширения.
-// Guid может быть у чего угодно (.prefab, .psb, .controller, .anim,
-// .mat, .asset, .cs, …), и нам важно не пропустить цель ссылки.
 function isMetaFile(path) {
   return typeof path === "string" && path.toLowerCase().endsWith(".meta");
 }
@@ -43,8 +39,6 @@ function detectKind(path) {
   return "other";
 }
 
-// Битовая маска первого байта PNG/JPEG/PSD — чтобы не пытаться парсить
-// как картинку то, что ею не является (например, .controller).
 function looksLikeImage(kind, bytes) {
   if (!bytes || bytes.length < 4) return false;
   if (kind === "png") return bytes[0] === 0x89 && bytes[1] === 0x50;
@@ -107,7 +101,6 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
   const totalEntries = Object.keys(guidToPath).length;
   console.log("[prefabs] карта построена, записей:", totalEntries, "пропущено:", skipped);
   if (totalEntries > 0 && totalEntries <= 50) {
-    // Небольшая карта — покажем её целиком, чтобы можно было сверить вручную.
     for (const [g, p] of Object.entries(guidToPath)) {
       console.log("[prefabs]   ", g, "→", p);
     }
@@ -122,11 +115,7 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
   return result;
 }
 
-// --- Чтение размеров из заголовков изображений ---
-
 function readPngSize(bytes) {
-  // PNG: 8 байт сигнатуры, затем IHDR. Ширина — 4 байта по смещению 16,
-  // высота — 4 байта по смещению 20, big-endian.
   if (bytes.length < 24) return null;
   if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4E || bytes[3] !== 0x47) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -137,7 +126,6 @@ function readPngSize(bytes) {
 }
 
 function readJpegSize(bytes) {
-  // JPEG: маркеры. Ищем SOF0/1/2/3 (0xC0-0xC3) и читаем размеры.
   if (bytes.length < 4) return null;
   if (bytes[0] !== 0xFF || bytes[1] !== 0xD8) return null;
   let i = 2;
@@ -158,9 +146,6 @@ function readJpegSize(bytes) {
 async function readAssetSize(kind, getContent, getAssetBytes, assetPath) {
   try {
     let bytes = null;
-
-    // Приоритетный путь — getAssetBytes: умеет читать большие файлы,
-    // даже если их нет в state.files (через GitHub API напрямую).
     if (typeof getAssetBytes === "function") {
       try {
         const b = await getAssetBytes(assetPath);
@@ -169,8 +154,6 @@ async function readAssetSize(kind, getContent, getAssetBytes, assetPath) {
         console.warn("[prefabs] getAssetBytes:", assetPath, e);
       }
     }
-
-    // Резервный путь — обычный getContent (для локального режима и мелочей).
     if (!bytes) {
       const content = await getContent(assetPath);
       if (content === null || content === undefined) {
@@ -190,21 +173,14 @@ async function readAssetSize(kind, getContent, getAssetBytes, assetPath) {
       }
     }
 
-    if (!bytes || bytes.length < 8) {
-      console.warn("[prefabs] слишком мало байт:", assetPath, bytes ? bytes.length : 0);
-      return null;
-    }
-    console.log("[prefabs] прочитано", bytes.length, "байт из", assetPath);
-
+    if (!bytes || bytes.length < 8) return null;
     if (!looksLikeImage(kind, bytes)) return null;
 
     if (kind === "psb" || kind === "psd") {
       const info = readPsdInfo(bytes);
       if (info && info.width && info.height) {
-        console.log("[prefabs] PSD/PSB размеры:", info.width, "×", info.height, "(", assetPath, ")");
         return { width: info.width, height: info.height };
       }
-      console.warn("[prefabs] readPsdInfo вернул null для", assetPath);
       return null;
     }
     if (kind === "png") return readPngSize(bytes);
@@ -215,8 +191,6 @@ async function readAssetSize(kind, getContent, getAssetBytes, assetPath) {
     return null;
   }
 }
-
-// --- Override'ы ---
 
 function setPropertyPath(obj, path, value) {
   const parts = String(path).split(".");
@@ -244,13 +218,6 @@ function applyOverrides(docs, overrides) {
   }
 }
 
-// --- Основная функция ---
-
-/**
- * Возвращает bounding box ассета в локальных единицах.
- *   { hasSprite: false }
- *   { hasSprite: true, minX, minY, maxX, maxY, color, spriteCount }
- */
 export async function loadPrefabBoundingBox({
   prefabPath,
   kind,
@@ -271,7 +238,6 @@ export async function loadPrefabBoundingBox({
 
   // --- Ассеты-картинки ---
   if (kind && kind !== "prefab" && kind !== "asset") {
-    // 1. Читаем .meta — там PPU и список спрайтов атласа.
     let metaInfo = null;
     try {
       const metaPath = prefabPath + ".meta";
@@ -290,9 +256,6 @@ export async function loadPrefabBoundingBox({
       console.warn("[prefabs] meta read:", prefabPath, e.message);
     }
 
-    // 2. Если .meta дала список спрайтов — считаем bbox и собираем
-    //    отдельные прямоугольники. Позиция центра — из spritePosition
-    //    (в системе координат Photoshop-документа), размер — из rect.
     if (metaInfo && metaInfo.sprites.length) {
       const ppu = metaInfo.ppu;
       const spriteRects = [];
@@ -303,11 +266,13 @@ export async function loadPrefabBoundingBox({
         const h = s.rect.height / ppu;
         const cx = s.centerX / ppu;
         const cy = s.centerY / ppu;
+        const px = (s.pivot && typeof s.pivot.x === "number") ? s.pivot.x : 0.5;
+        const py = (s.pivot && typeof s.pivot.y === "number") ? s.pivot.y : 0.5;
         const x0 = cx - w / 2;
         const y0 = cy - h / 2;
         const x1 = cx + w / 2;
         const y1 = cy + h / 2;
-        spriteRects.push({ x: cx, y: cy, w, h, name: s.name });
+        spriteRects.push({ x: cx, y: cy, w, h, name: s.name, pivotX: px, pivotY: py });
         if (x0 < minX) minX = x0;
         if (y0 < minY) minY = y0;
         if (x1 > maxX) maxX = x1;
@@ -317,16 +282,41 @@ export async function loadPrefabBoundingBox({
         "[prefabs] атлас:", metaInfo.sprites.length, "спрайтов · bbox:",
         (maxX - minX).toFixed(2), "×", (maxY - minY).toFixed(2)
       );
-      return {
+
+      const result = {
         hasSprite: true,
         minX, minY, maxX, maxY,
         sprites: spriteRects,
         color: { r: 1, g: 1, b: 1, a: 1 },
         spriteCount: metaInfo.sprites.length,
+        imagePath: prefabPath,
+        imagePPU: ppu,
       };
+
+      // Для PSD/PSB пробуем декодировать саму картинку.
+      if ((kind === "psb" || kind === "psd") && typeof getAssetBytes === "function") {
+        try {
+          const bytes = await getAssetBytes(prefabPath);
+          if (bytes && bytes.length) {
+            const bitmap = await loadPsbImage(bytes, prefabPath);
+            if (bitmap) {
+              result.bitmap = bitmap;
+              result.imageWidth = bitmap.width;
+              result.imageHeight = bitmap.height;
+              console.log(
+                "[prefabs] картинка загружена:", prefabPath,
+                bitmap.width + "×" + bitmap.height
+              );
+            }
+          }
+        } catch (e) {
+          console.warn("[prefabs] bitmap:", prefabPath, e && e.message ? e.message : e);
+        }
+      }
+
+      return result;
     }
 
-    // 3. Fallback — читаем заголовок самого файла.
     const size = await readAssetSize(kind, getContent, getAssetBytes, prefabPath);
     if (!size || !size.width || !size.height) {
       console.warn("[prefabs] не удалось получить ни meta, ни размер:", prefabPath);
@@ -342,12 +332,13 @@ export async function loadPrefabBoundingBox({
       minY: -h / 2,
       maxX: w / 2,
       maxY: h / 2,
+      sprites: [{ x: 0, y: 0, w, h, name: "", pivotX: 0.5, pivotY: 0.5 }],
       color: { r: 1, g: 1, b: 1, a: 1 },
       spriteCount: 1,
     };
   }
 
-  // --- Префаб: рекурсивный разбор ---
+  // --- Префаб ---
   const text = await getContent(prefabPath);
   if (typeof text !== "string") {
     console.warn("[prefabs] пустой файл:", prefabPath);
@@ -369,6 +360,10 @@ export async function loadPrefabBoundingBox({
   let spriteCount = 0;
   let firstColor = null;
   const sprites = [];
+  let bitmap = null;
+  let imagePPU = null;
+  let imageWidth = 0;
+  let imageHeight = 0;
 
   function absorb(cx, cy, hw, hh, color, name) {
     const x0 = cx - hw, x1 = cx + hw;
@@ -447,8 +442,6 @@ export async function loadPrefabBoundingBox({
       if (!firstColor && nested.color) firstColor = nested.color;
       spriteCount += nested.spriteCount || 0;
 
-      // Пробрасываем прямоугольники вложенных спрайтов с учётом
-      // локального сдвига и масштаба инстанса.
       if (Array.isArray(nested.sprites)) {
         for (const s of nested.sprites) {
           sprites.push({
@@ -459,6 +452,13 @@ export async function loadPrefabBoundingBox({
             name: s.name,
           });
         }
+      }
+
+      if (!bitmap && nested.bitmap) {
+        bitmap = nested.bitmap;
+        imagePPU = nested.imagePPU;
+        imageWidth = nested.imageWidth;
+        imageHeight = nested.imageHeight;
       }
     }
   }
@@ -471,6 +471,10 @@ export async function loadPrefabBoundingBox({
     hasSprite: true,
     minX, minY, maxX, maxY,
     sprites,
+    bitmap,
+    imagePPU,
+    imageWidth,
+    imageHeight,
     color: firstColor || { r: 1, g: 1, b: 1, a: 1 },
     spriteCount,
   };
