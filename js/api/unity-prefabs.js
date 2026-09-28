@@ -303,6 +303,15 @@ export async function loadPrefabBoundingBox({
               result.bitmap = bitmap;
               result.imageWidth = bitmap.width;
               result.imageHeight = bitmap.height;
+              // Превью из PSD хранит только визуальный размер (например 256×256),
+              // но по PPU он маппится на реальный размер документа. Для
+              // корректной отрисовки берём реальный размер из meta (bbox)
+              // и растягиваем превью на него.
+              result.imageSourceWidth = bitmap.width;
+              result.imageSourceHeight = bitmap.height;
+              result.imageIsPreview = (bitmap.width !== metaInfo.sprites.reduce(
+                (m, s) => Math.max(m, s.rect.x + s.rect.width), 0
+              ));
               console.log(
                 "[prefabs] картинка загружена:", prefabPath,
                 bitmap.width + "×" + bitmap.height
