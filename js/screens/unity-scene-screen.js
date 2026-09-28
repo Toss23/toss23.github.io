@@ -216,13 +216,13 @@ export function initUnitySceneScreen() {
       const ca = c.a === undefined ? 1 : c.a;
 
       // 1. Есть декодированная картинка PSB/PSD — рисуем её.
+      //    Размер для отрисовки берём из bbox (g.sizeX/g.sizeY), а не из
+      //    размеров самой картинки: превью может быть маленьким, а bbox
+      //    соответствует тому, как объект реально разложен на сцене.
       if (g.bitmap) {
         const p = toScreen(g.worldX, g.worldY);
-        const sx = Math.abs(g.localScale.x || 1);
-        const sy = Math.abs(g.localScale.y || 1);
-        const ppu = g.bitmapPPU || 100;
-        const wU = (g.bitmapW / ppu) * sx;
-        const hU = (g.bitmapH / ppu) * sy;
+        const wU = Math.max(0.001, g.sizeX);
+        const hU = Math.max(0.001, g.sizeY);
         const wPx = Math.max(2, wU * view.scale);
         const hPx = Math.max(2, hU * view.scale);
         const bx = p.x - wPx / 2;
