@@ -300,6 +300,7 @@ export function initUnitySceneScreen() {
             prefabPath,
             kind,
             getContent: context.getContent,
+            getAssetBytes: context.getAssetBytes,
             prefabMap,
             kindByGuid,
             selfGuid: guid,

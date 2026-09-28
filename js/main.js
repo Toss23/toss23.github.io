@@ -2421,6 +2421,66 @@ async function openImage(file) {
   }
 }
 
+// Читает байты Unity-ассета (psb, psd, png, jpg, tga).
+// Работает, даже если файл не попал в state.files из-за размера.
+// Возвращает Uint8Array или null.
+async function readUnityAssetBytes(path) {
+  const { octokit, repo, branch, mode, cloned, files } = getState();
+  if (!repo) return null;
+
+  // 1. Local — из IndexedDB.
+  if (mode === "local" && cloned) {
+    try {
+      const entry = await storage.getFile(cloned.key, path);
+      if (entry && entry.isBinary && typeof entry.content === "string") {
+        return base64ToBytes(entry.content);
+      }
+      if (entry && typeof entry.content === "string") {
+        // Не бинарный, но тоже может пригодиться (yml/yaml).
+        const enc = new TextEncoder();
+        return enc.encode(entry.content);
+      }
+    } catch (e) {
+      console.warn("readUnityAssetBytes local:", path, e);
+    }
+  }
+
+  // 2. Remote — если файл есть в списке, у нас есть SHA.
+  const f = files.find((x) => x.path === path);
+  if (f && f.sha) {
+    try {
+      const blob = await getBlobRaw(octokit, repo.owner, repo.name, f.sha);
+      return new Uint8Array(await blob.arrayBuffer());
+    } catch (e) {
+      console.warn("getBlobRaw:", path, e.message);
+    }
+  }
+
+  // 3. Remote — файла нет в списке. Запрашиваем через API напрямую.
+  try {
+    const res = await octokit.repos.getContent({
+      owner: repo.owner, repo: repo.name, path, ref: branch,
+    });
+    const d = res && res.data;
+    if (d && typeof d === "object") {
+      if (d.content && d.encoding === "base64") {
+        const bin = atob(String(d.content).replace(/\s/g, ""));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return bytes;
+      }
+      if (d.sha) {
+        const blob = await getBlobRaw(octokit, repo.owner, repo.name, d.sha);
+        return new Uint8Array(await blob.arrayBuffer());
+      }
+    }
+  } catch (e) {
+    console.warn("readUnityAssetBytes remote:", path, e.message);
+  }
+
+  return null;
+}
+
 async function openUnityScene(file) {
   setStatus(`Загрузка ${file.path}...`);
   try {
@@ -2437,6 +2497,7 @@ async function openUnityScene(file) {
       headSha,
       files,
       getContent: (p) => getCurrentFileContent(p),
+      getAssetBytes: (p) => readUnityAssetBytes(p),
     };
     setState({ openFile: { path: file.path } });
     unitySceneScreen.open(file.path, content, context);

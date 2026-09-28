@@ -154,32 +154,56 @@ function readJpegSize(bytes) {
   return null;
 }
 
-async function readAssetSize(kind, getContent, assetPath) {
+async function readAssetSize(kind, getContent, getAssetBytes, assetPath) {
   try {
-    const content = await getContent(assetPath);
-    if (content === null || content === undefined) return null;
-
-    // Локальный режим может вернуть байты (Uint8Array) или base64-строку.
     let bytes = null;
-    if (content instanceof Uint8Array) bytes = content;
-    else if (typeof content === "object" && content.binary) return null;
-    else if (typeof content === "string" && /^[A-Za-z0-9+/=]+$/.test(content.slice(0, 64))) {
+
+    // Приоритетный путь — getAssetBytes: умеет читать большие файлы,
+    // даже если их нет в state.files (через GitHub API напрямую).
+    if (typeof getAssetBytes === "function") {
       try {
-        const bin = atob(content);
-        bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      } catch { return null; }
-    } else {
+        const b = await getAssetBytes(assetPath);
+        if (b instanceof Uint8Array && b.length > 0) bytes = b;
+      } catch (e) {
+        console.warn("[prefabs] getAssetBytes:", assetPath, e);
+      }
+    }
+
+    // Резервный путь — обычный getContent (для локального режима и мелочей).
+    if (!bytes) {
+      const content = await getContent(assetPath);
+      if (content === null || content === undefined) {
+        console.warn("[prefabs] ассет недоступен:", assetPath);
+        return null;
+      }
+      if (content instanceof Uint8Array) bytes = content;
+      else if (typeof content === "object" && content.binary) return null;
+      else if (typeof content === "string" && /^[A-Za-z0-9+/=]+$/.test(content.slice(0, 64))) {
+        try {
+          const bin = atob(content);
+          bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        } catch { return null; }
+      } else {
+        return null;
+      }
+    }
+
+    if (!bytes || bytes.length < 8) {
+      console.warn("[prefabs] слишком мало байт:", assetPath, bytes ? bytes.length : 0);
       return null;
     }
+    console.log("[prefabs] прочитано", bytes.length, "байт из", assetPath);
 
     if (!looksLikeImage(kind, bytes)) return null;
 
     if (kind === "psb" || kind === "psd") {
       const info = readPsdInfo(bytes);
       if (info && info.width && info.height) {
+        console.log("[prefabs] PSD/PSB размеры:", info.width, "×", info.height, "(", assetPath, ")");
         return { width: info.width, height: info.height };
       }
+      console.warn("[prefabs] readPsdInfo вернул null для", assetPath);
       return null;
     }
     if (kind === "png") return readPngSize(bytes);
@@ -230,6 +254,7 @@ export async function loadPrefabBoundingBox({
   prefabPath,
   kind,
   getContent,
+  getAssetBytes,
   prefabMap,
   kindByGuid,
   selfGuid,
@@ -245,7 +270,7 @@ export async function loadPrefabBoundingBox({
 
   // --- Ассеты-картинки: размер из заголовка ---
   if (kind && kind !== "prefab" && kind !== "asset") {
-    const size = await readAssetSize(kind, getContent, prefabPath);
+    const size = await readAssetSize(kind, getContent, getAssetBytes, prefabPath);
     if (!size || !size.width || !size.height) return { hasSprite: false };
     const w = size.width / DEFAULT_PPU;
     const h = size.height / DEFAULT_PPU;
@@ -332,6 +357,7 @@ export async function loadPrefabBoundingBox({
           prefabPath: nestedPath,
           kind: nestedKind,
           getContent,
+          getAssetBytes,
           prefabMap,
           kindByGuid,
           selfGuid: nestedGuid,
