@@ -13,7 +13,7 @@ import { parseUnityYaml, buildSceneModel } from "./unity-yaml.js";
 import { readPsdInfo } from "@core/psd-preview.js";
 
 const CACHE_PREFIX = "unity_prefabs:";
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const MAX_DEPTH = 6;
 const DEFAULT_PPU = 100;
 
@@ -66,6 +66,7 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
   } catch (e) {
     console.warn("prefab map cache read:", e);
   }
+  console.log("[prefabs] кэш не найден, строим карту заново (версия " + CACHE_VERSION + ")");
 
   const allFiles = files || [];
   const metaFiles = allFiles.filter((f) => f && isMetaFile(f.path));
