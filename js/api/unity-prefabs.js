@@ -298,8 +298,10 @@ export async function loadPrefabBoundingBox({
       if ((kind === "psb" || kind === "psd") && typeof getAssetBytes === "function") {
         try {
           const bytes = await getAssetBytes(prefabPath);
+          console.log("[prefabs] PSB байт получено:", bytes ? bytes.length : 0, "из", prefabPath);
           if (bytes && bytes.length) {
             const info = readPsdInfo(bytes);
+            console.log("[prefabs] заголовок PSB:", info ? JSON.stringify(info) : "null");
             result.docWidthPx = info ? info.width : 0;
             result.docHeightPx = info ? info.height : 0;
             const bitmap = await loadPsbImage(bytes, prefabPath);
