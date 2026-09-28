@@ -272,13 +272,20 @@ export function initUnitySceneScreen() {
       if (myGen !== generation) return;
 
       const uniqueGuids = [...new Set(instances.map((g) => g.sourceGuid))];
+      console.log("[unity-scene] префаб-инстансов:", instances.length, "уникальных guid:", uniqueGuids.length);
+      console.log("[unity-scene] guid'ы:", uniqueGuids);
+
       const resolved = new Map();
       let done = 0;
       for (const guid of uniqueGuids) {
         done++;
         updateBusyText(`Чтение префабов: ${done} / ${uniqueGuids.length}`);
         const prefabPath = prefabMap[guid];
-        if (!prefabPath) continue;
+        if (!prefabPath) {
+          console.warn("[unity-scene] guid не найден в карте:", guid);
+          continue;
+        }
+        console.log("[unity-scene] резолв:", guid, "→", prefabPath);
         try {
           const info = await loadPrefabBoundingBox({
             prefabPath,
@@ -288,7 +295,12 @@ export function initUnitySceneScreen() {
             visited: new Set(),
             depth: 0,
           });
-          if (info && info.hasSprite) resolved.set(guid, info);
+          if (info && info.hasSprite) {
+            console.log("[unity-scene] bbox найден:", guid, "размер:", (info.maxX - info.minX).toFixed(2), "×", (info.maxY - info.minY).toFixed(2), "спрайтов:", info.spriteCount);
+            resolved.set(guid, info);
+          } else {
+            console.warn("[unity-scene] спрайтов не найдено:", guid, prefabPath);
+          }
         } catch (e) {
           console.warn("prefab load:", prefabPath, e);
         }

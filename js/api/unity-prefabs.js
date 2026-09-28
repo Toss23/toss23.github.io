@@ -1,13 +1,14 @@
 // Резолвер префабов Unity: по sourceGuid из PrefabInstance находит
 // .prefab в репозитории, читает его и возвращает размеры bounding box.
 //
-// Если у префаба собственных SpriteRenderer нет (он контейнер),
-// рекурсивно идём во вложенные PrefabInstance и объединяем их bbox'ы.
-// Защита от циклов — visited set по guid, ограничение глубины — 6.
-//
-// Карта guid → path строится один раз и кэшируется в IndexedDB
-// (ключ = репозиторий + ветка + headSha). При следующем коммите
-// headSha меняется — карта строится заново.
+// Особенности:
+// - Если у префаба собственных SpriteRenderer нет, рекурсивно идём
+//   во вложенные PrefabInstance и объединяем их bbox'ы.
+// - Override'ы (m_Modifications) применяются к вложенному префабу перед
+//   расчётом bbox: иначе позиции внутренних объектов берутся из
+//   исходного файла, а не из переопределённых.
+// - Карта guid → path строится один раз и кэшируется в IndexedDB
+//   (ключ = репозиторий + ветка + headSha).
 
 import { get as idbGet, set as idbSet } from "https://esm.sh/idb-keyval@6";
 import { parseUnityYaml, buildSceneModel } from "./unity-yaml.js";
@@ -19,17 +20,13 @@ function makeCacheKey(repoKey, headSha) {
   return CACHE_PREFIX + (repoKey || "repo") + "@" + (headSha || "unknown");
 }
 
-/**
- * Карта { guid: "путь/к/файлу.prefab" }.
- * Сканирует все .prefab.meta в files и извлекает оттуда guid.
- * Кэшируется в IndexedDB.
- */
 export async function getPrefabMap({ repoKey, headSha, files, getContent, onProgress }) {
   const key = makeCacheKey(repoKey, headSha);
 
   try {
     const cached = await idbGet(key);
     if (cached && cached.guidToPath && typeof cached.guidToPath === "object") {
+      console.log("[prefabs] карта из кэша, записей:", Object.keys(cached.guidToPath).length);
       return cached.guidToPath;
     }
   } catch (e) {
@@ -39,9 +36,12 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
   const metaFiles = (files || []).filter(
     (f) => f && typeof f.path === "string" && f.path.endsWith(".prefab.meta")
   );
+  console.log("[prefabs] найдено .prefab.meta файлов:", metaFiles.length);
+
   const guidToPath = {};
   const total = metaFiles.length;
   let done = 0;
+  let skipped = 0;
 
   for (const mf of metaFiles) {
     done++;
@@ -50,13 +50,15 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
     }
     try {
       const text = await getContent(mf.path);
-      if (typeof text !== "string") continue;
+      if (typeof text !== "string") { skipped++; continue; }
       const m = text.match(/^guid:\s*([a-f0-9]+)/m);
-      if (!m) continue;
+      if (!m) { skipped++; continue; }
       const prefabPath = mf.path.replace(/\.meta$/, "");
       guidToPath[m[1]] = prefabPath;
-    } catch {}
+    } catch { skipped++; }
   }
+
+  console.log("[prefabs] карта построена, записей:", Object.keys(guidToPath).length, "пропущено:", skipped);
 
   try {
     await idbSet(key, { guidToPath, builtAt: Date.now() });
@@ -67,14 +69,41 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
   return guidToPath;
 }
 
+// Применяет одну строку override: m_LocalPosition.x → data.m_LocalPosition.x = value.
+function setPropertyPath(obj, path, value) {
+  const parts = String(path).split(".");
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const k = parts[i];
+    if (!cur[k] || typeof cur[k] !== "object") cur[k] = {};
+    cur = cur[k];
+  }
+  cur[parts[parts.length - 1]] = value;
+}
+
+// overrides: Map<fileID-в-целевом-префабе, Array<[propertyPath, value]>>
+function applyOverrides(docs, overrides) {
+  if (!overrides || !overrides.size) return;
+  for (const [fileId, entries] of overrides) {
+    const doc = docs.find((d) => String(d.fileID) === String(fileId));
+    if (!doc || !doc.data) continue;
+    const keys = Object.keys(doc.data);
+    if (!keys.length) continue;
+    const body = doc.data[keys[0]];
+    if (!body || typeof body !== "object") continue;
+    for (const [path, value] of entries) {
+      setPropertyPath(body, path, value);
+    }
+  }
+}
+
 /**
  * Читает .prefab и возвращает bounding box по всем SpriteRenderer,
- * включая вложенные префабы. Рекурсивный обход с защитой от циклов.
+ * включая вложенные префабы, с применением override'ов.
  *
  * Возвращает:
- *   { hasSprite: false }                                    — если спрайтов нет
- *   { hasSprite: true, minX, minY, maxX, maxY,              — иначе
- *     color, spriteCount }
+ *   { hasSprite: false }
+ *   { hasSprite: true, minX, minY, maxX, maxY, color, spriteCount }
  */
 export async function loadPrefabBoundingBox({
   prefabPath,
@@ -91,7 +120,10 @@ export async function loadPrefabBoundingBox({
   if (selfGuid) visited.add(selfGuid);
 
   const text = await getContent(prefabPath);
-  if (typeof text !== "string") return null;
+  if (typeof text !== "string") {
+    console.warn("[prefabs] пустой файл:", prefabPath);
+    return null;
+  }
 
   let docs, model;
   try {
@@ -124,7 +156,7 @@ export async function loadPrefabBoundingBox({
     spriteCount++;
   }
 
-  // --- 2. Вложенные префабы — рекурсивно, с объединением bbox
+  // --- 2. Вложенные префабы с применением overrides
   if (prefabMap) {
     for (const g of model.gameObjects) {
       if (!g.isPrefabInstance) continue;
@@ -132,7 +164,28 @@ export async function loadPrefabBoundingBox({
       if (!nestedGuid) continue;
       if (visited.has(nestedGuid)) continue;
       const nestedPath = prefabMap[nestedGuid];
-      if (!nestedPath) continue;
+      if (!nestedPath) {
+        console.warn("[prefabs] вложенный guid не найден в карте:", nestedGuid, "в файле", prefabPath);
+        continue;
+      }
+
+      // Собираем override'ы, которые прицелены именно во вложенный префаб.
+      const doc = model.byFileId.get(g.fileID);
+      const pi = doc && doc.data && doc.data.PrefabInstance;
+      const mods = pi && pi.m_Modification && pi.m_Modification.m_Modifications;
+      const overrides = new Map();
+      if (Array.isArray(mods)) {
+        for (const m of mods) {
+          const tgt = m && m.target;
+          if (!tgt) continue;
+          // Применяем только override'ы, чей target.guid совпадает
+          // с вложенным префабом (иначе они относятся к другим файлам).
+          if (tgt.guid !== nestedGuid) continue;
+          const fid = String(tgt.fileID);
+          if (!overrides.has(fid)) overrides.set(fid, []);
+          overrides.get(fid).push([m.propertyPath, m.value]);
+        }
+      }
 
       let nested = null;
       try {
@@ -143,6 +196,7 @@ export async function loadPrefabBoundingBox({
           selfGuid: nestedGuid,
           visited,
           depth: depth + 1,
+          overrides,
         });
       } catch (e) {
         console.warn("nested prefab:", nestedPath, e);
