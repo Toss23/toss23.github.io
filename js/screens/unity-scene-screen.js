@@ -12,6 +12,10 @@ export function initUnitySceneScreen() {
   const hierarchyToggle = $("unity-hierarchy-toggle");
   const inspectorPanel = $("unity-inspector-panel");
   const inspectorCloseBtn = $("unity-inspector-close");
+  const hierarchyPanel = $("unity-hierarchy-panel");
+  const hierarchyToggle = $("unity-hierarchy-toggle");
+  const inspectorPanel = $("unity-inspector-panel");
+  const inspectorCloseBtn = $("unity-inspector-close");
 
   const ctx = canvas ? canvas.getContext("2d") : null;
 
@@ -614,6 +618,12 @@ export function initUnitySceneScreen() {
       selectedFileID = null;
       if (hierEl) hierEl.innerHTML = "";
       if (inspectorEl) inspectorEl.innerHTML = "";
+      if (hierarchyPanel) hierarchyPanel.classList.remove("collapsed");
+      if (inspectorPanel) inspectorPanel.classList.remove("closed");
+      if (hierarchyToggle) {
+        hierarchyToggle.textContent = "▾";
+        hierarchyToggle.title = "Свернуть";
+      }
       if (hierarchyPanel) hierarchyPanel.classList.remove("collapsed");
       if (inspectorPanel) inspectorPanel.classList.remove("closed");
       if (hierarchyToggle) {
