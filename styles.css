@@ -564,6 +564,22 @@ body {
   font-feature-settings: "liga" 0, "calt" 0, "dlig" 0;
 }
 
+/* Шрифт кода. Управляется атрибутом data-editor-font на <html>,
+   который выставляет editor-screen.js. Номера строк (.editor-line-numbers)
+   сюда не входят — они всегда на системном моно. */
+html[data-editor-font="cascadia"] #file-editor #file-content,
+html[data-editor-font="cascadia"] #file-editor .editor-highlight {
+  font-family: "Cascadia Code", ui-monospace, Menlo, Consolas, monospace !important;
+}
+html[data-editor-font="jetbrains"] #file-editor #file-content,
+html[data-editor-font="jetbrains"] #file-editor .editor-highlight {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace !important;
+}
+html[data-editor-font="system"] #file-editor #file-content,
+html[data-editor-font="system"] #file-editor .editor-highlight {
+  font-family: ui-monospace, Menlo, Consolas, monospace !important;
+}
+
 /* Перенос строк (word wrap) — включается классом .wrap на #file-editor */
 #file-editor.wrap #file-content,
 #file-editor.wrap .editor-highlight {

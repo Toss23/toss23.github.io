@@ -446,29 +446,24 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
   /* ---------- Настройки редактора (шрифт, перенос, табы) ---------- */
 
   function applyEditorSettings() {
-    const editorEl = document.getElementById("file-editor");
-    if (editorEl) editorEl.classList.toggle("wrap", getEditorWordWrap());
+    try {
+      const editorEl = document.getElementById("file-editor");
+      if (editorEl) editorEl.classList.toggle("wrap", getEditorWordWrap());
+    } catch (e) { console.warn("editor: wordwrap", e); }
 
-    const root = document.documentElement;
-    root.style.setProperty("--editor-tab-size", String(getEditorTabSize()));
+    try {
+      document.documentElement.style.setProperty("--editor-tab-size", String(getEditorTabSize()));
+    } catch (e) { console.warn("editor: tabsize", e); }
 
-    const fam = getEditorFontFamily();
-    let stack;
-    if (fam === "cascadia") {
-      stack = '"Cascadia Code", ui-monospace, Menlo, Consolas, monospace';
-    } else if (fam === "jetbrains") {
-      stack = '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
-    } else {
-      stack = "ui-monospace, Menlo, Consolas, monospace";
-    }
-
-    // Применяем шрифт напрямую, с !important — так его не перебьёт
-    // никакое CSS-правило. Шрифт идёт только на текст кода,
-    // номера строк (.editor-line-numbers) остаются системным моно.
-    const textareaEl = document.getElementById("file-content");
-    const highlightEl = document.getElementById("file-highlight");
-    if (textareaEl) textareaEl.style.setProperty("font-family", stack, "important");
-    if (highlightEl) highlightEl.style.setProperty("font-family", stack, "important");
+    // Шрифт: через data-атрибут на <html>. CSS сам подставит нужную
+    // font-family для #file-content и #file-highlight с !important.
+    // Так шрифт применяется даже если эта функция не найдёт элементы
+    // напрямую или что-то пойдёт не так с inline-стилями.
+    try {
+      const fam = getEditorFontFamily();
+      const val = (fam === "cascadia" || fam === "jetbrains") ? fam : "system";
+      document.documentElement.dataset.editorFont = val;
+    } catch (e) { console.warn("editor: font", e); }
 
     renderHighlight();
   }
@@ -498,6 +493,9 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
     textarea.disabled = !!disabled;
     textarea.scrollTop = 0;
     textarea.scrollLeft = 0;
+    // Перед каждым рендером обновляем шрифт: так смена настройки
+    // срабатывает сразу, даже если событие settings-changed потерялось.
+    applyEditorSettings();
     renderHighlight();
   }
 
