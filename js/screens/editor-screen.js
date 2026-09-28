@@ -3,6 +3,7 @@ import { UI } from "@core/config.js";
 import { gitBlobSha } from "@core/git-sha.js";
 import { fromLf } from "@core/encoding.js";
 import { tokenize, renderTokens, renderPlain, findBracketPair } from "@core/csharp-highlight.js";
+import { getEditorTabSize, getEditorAutosave, getEditorBracketHighlight, getEditorWordWrap, getEditorFontFamily } from "@core/settings.js";
 
 function isCSharpPath(path) {
   return typeof path === "string" && /\.cs$/i.test(path);
@@ -10,8 +11,10 @@ function isCSharpPath(path) {
 
 const OPEN_TO_CLOSE = { "(": ")", "[": "]", "{": "}", "\"": "\"", "'": "'" };
 const CLOSE_CHARS = new Set([")", "]", "}", "\"", "'"]);
-const INDENT_SIZE = 4;
-const INDENT_UNIT = " ".repeat(INDENT_SIZE);
+// Актуальные значения читаются из настроек при каждом вызове,
+// чтобы изменения вступали в силу без перезапуска.
+function indentSize() { return getEditorTabSize(); }
+function indentUnit() { return " ".repeat(indentSize()); }
 const HISTORY_LIMIT = 200;
 const HISTORY_MERGE_MS = 400;
 const AUTOSAVE_DELAY = 3000;
@@ -127,7 +130,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
     if (!codeEl || !textarea) return;
     const text = textarea.value;
     const pos = textarea.selectionStart || 0;
-    const pair = findBracketPair(text, pos);
+    const pair = getEditorBracketHighlight() ? findBracketPair(text, pos) : null;
     const path = base ? base.path : "";
     try {
       if (isCSharpPath(path)) {
@@ -163,6 +166,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
 
   function scheduleAutosave() {
     if (!base || !onAutosave) return;
+    if (!getEditorAutosave()) return;
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {
       if (!base || !textarea) return;
@@ -211,16 +215,17 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
     const text = textarea.value;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    if (start === end) { insertText(INDENT_UNIT); return; }
+    if (start === end) { insertText(indentUnit()); return; }
     const lineStart = text.lastIndexOf("\n", start - 1) + 1;
     let lineEnd = text.indexOf("\n", end);
     if (lineEnd === -1) lineEnd = text.length;
     const chunk = text.slice(lineStart, lineEnd);
     const lines = chunk.split("\n");
-    const newChunk = lines.map((l) => l.length ? INDENT_UNIT + l : l).join("\n");
+    const unit = indentUnit();
+    const newChunk = lines.map((l) => l.length ? unit + l : l).join("\n");
     const inserted = newChunk.length - chunk.length;
     textarea.setRangeText(newChunk, lineStart, lineEnd, "end");
-    textarea.setSelectionRange(start + INDENT_UNIT.length, end + inserted);
+    textarea.setSelectionRange(start + unit.length, end + inserted);
     takeSnapshot(true);
     afterEdit();
   }
@@ -239,7 +244,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
     const newLines = lines.map((l, idx) => {
       const m = l.match(/^[ \t]+/);
       if (!m) return l;
-      const take = Math.min(m[0].length, INDENT_SIZE);
+      const take = Math.min(m[0].length, indentSize());
       if (idx === 0) firstLineRemoved = take;
       removedTotal += take;
       return l.slice(take);
@@ -354,7 +359,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
 
       if (trimmedEnd.endsWith("{")) {
         e.preventDefault();
-        const nextIndent = indent + INDENT_UNIT;
+        const nextIndent = indent + indentUnit();
         if (trimmedAfter.startsWith("}")) {
           insertText("\n" + nextIndent + "\n" + indent, 1 + nextIndent.length, 1 + nextIndent.length);
         } else {
@@ -365,7 +370,8 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
       if (trimmedAfter.startsWith("}")) {
         e.preventDefault();
         let baseIndent = indent;
-        if (baseIndent.length >= INDENT_SIZE) baseIndent = baseIndent.slice(0, -INDENT_SIZE);
+        const sz = indentSize();
+        if (baseIndent.length >= sz) baseIndent = baseIndent.slice(0, -sz);
         insertText("\n" + baseIndent);
         return;
       }
@@ -381,7 +387,8 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
       if (/^[ \t]+$/.test(before)) {
         e.preventDefault();
         let baseIndent = before;
-        if (baseIndent.length >= INDENT_SIZE) baseIndent = baseIndent.slice(0, -INDENT_SIZE);
+        const sz = indentSize();
+        if (baseIndent.length >= sz) baseIndent = baseIndent.slice(0, -sz);
         textarea.setRangeText(baseIndent + "}", lineStart, pos, "end");
         takeSnapshot(true);
         afterEdit();
@@ -435,6 +442,32 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
     if (!base) return;
     onRevert?.(base.path);
   });
+
+  /* ---------- Настройки редактора (шрифт, перенос, табы) ---------- */
+
+  function applyEditorSettings() {
+    const editorEl = document.getElementById("file-editor");
+    if (editorEl) editorEl.classList.toggle("wrap", getEditorWordWrap());
+
+    const root = document.documentElement;
+    root.style.setProperty("--editor-tab-size", String(getEditorTabSize()));
+
+    const fam = getEditorFontFamily();
+    let stack;
+    if (fam === "cascadia") {
+      stack = '"Cascadia Code", ui-monospace, Menlo, Consolas, monospace';
+    } else if (fam === "jetbrains") {
+      stack = '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
+    } else {
+      stack = "ui-monospace, Menlo, Consolas, monospace";
+    }
+    root.style.setProperty("--editor-font-family", stack);
+
+    renderHighlight();
+  }
+
+  window.addEventListener("settings-changed", applyEditorSettings);
+  applyEditorSettings();
 
   async function check() {
     if (!base) return;
@@ -630,7 +663,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
       const trimmedEnd = beforeCaret.replace(/[ \t]+$/, "");
       const trimmedAfter = afterCaret.replace(/^[ \t]*/, "");
       if (trimmedEnd.endsWith("{")) {
-        const nextIndent = indent + INDENT_UNIT;
+        const nextIndent = indent + indentUnit();
         if (trimmedAfter.startsWith("}")) {
           insertText("\n" + nextIndent + "\n" + indent, 1 + nextIndent.length, 1 + nextIndent.length);
         } else {
@@ -640,7 +673,8 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
       }
       if (trimmedAfter.startsWith("}")) {
         let baseIndent = indent;
-        if (baseIndent.length >= INDENT_SIZE) baseIndent = baseIndent.slice(0, -INDENT_SIZE);
+        const sz = indentSize();
+        if (baseIndent.length >= sz) baseIndent = baseIndent.slice(0, -sz);
         insertText("\n" + baseIndent);
         return;
       }

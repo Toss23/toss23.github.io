@@ -59,6 +59,7 @@ import { initCommitScreen } from "@screens/commit-screen.js";
 
 import { SCREENS, isImagePath, isAudioPath, APP_REPO } from "@core/config.js";
 import * as storage from "@core/storage.js";
+import { getEditorAutosave } from "@core/settings.js";
 
 /* ---------- Утилиты ---------- */
 
@@ -452,7 +453,11 @@ async function goBack() {
   }
 
   if (screen === SCREENS.EDITOR) {
-    await maybeAutoSave();
+    const { openFile } = getState();
+    if (openFile) {
+      const decision = await confirmSaveOnClose(openFile.path);
+      if (decision === "cancel") return;
+    }
     editorScreen.close();
     setState({ openFile: null });
     setScreen(SCREENS.FILES);
@@ -513,7 +518,80 @@ async function maybeAutoSave() {
   const { mode, openFile, dirty } = getState();
   if (mode !== "local" || !openFile) return;
   if (!dirty.has(openFile.path)) return;
+  if (!getEditorAutosave()) return;
   await saveFileToLocal(openFile.path, dirty.get(openFile.path));
+}
+
+// Диалог при закрытии файла с несохранёнными правками (только local,
+// только при выключенном автосохранении).
+// Возвращает: "saved" | "discarded" | "kept" | "clean" | "cancel".
+async function confirmSaveOnClose(path) {
+  const state = getState();
+  const { mode, cloned, dirty } = state;
+
+  // Собираем актуальное содержимое редактора, если закрывается активная вкладка.
+  const captured = editorScreen.captureDirty?.();
+  const isActive = !!(captured && captured.path === path && captured.unsaved);
+  if (isActive) setDirty(path, captured.current);
+
+  // Local + автосохранение включено — сохраняем молча, как раньше.
+  if (mode === "local" && cloned && getEditorAutosave()) {
+    if (getState().dirty.has(path)) {
+      await saveFileToLocal(path, getState().dirty.get(path));
+      return "saved";
+    }
+    return "clean";
+  }
+
+  // Remote — не спрашиваем, правки остаются в dirty для коммита.
+  if (mode !== "local" || !cloned) {
+    return (isActive || dirty.has(path)) ? "kept" : "clean";
+  }
+
+  // Local + автосохранение выключено — спрашиваем.
+  if (!isActive && !dirty.has(path)) return "clean";
+
+  const choice = await askSaveOrDiscard(path);
+  if (choice === "cancel") return "cancel";
+
+  if (choice === "save") {
+    const contentLf = isActive ? captured.current : dirty.get(path);
+    await saveFileToLocal(path, contentLf);
+    return "saved";
+  }
+
+  // discard
+  if (isActive) {
+    try {
+      const entry = await storage.getFile(cloned.key, path);
+      if (entry && !entry.isBinary) {
+        const contentLf = toLf(entry.content);
+        editorScreen.revert({ content: contentLf, baseSha: entry.baseSha });
+      } else {
+        editorScreen.close();
+      }
+    } catch (e) {
+      console.warn("discard revert:", e);
+      editorScreen.close();
+    }
+  }
+  removeDirty(path);
+  return "discarded";
+}
+
+function askSaveOrDiscard(path) {
+  return new Promise((resolve) => {
+    dialogs.choose({
+      title: "Несохранённые изменения",
+      text: `${path}\n\nСохранить изменения перед закрытием?`,
+      onDismiss: () => resolve("cancel"),
+      options: [
+        { text: "Сохранить", kind: "primary", onClick: () => resolve("save") },
+        { text: "Не сохранять", onClick: () => resolve("discard") },
+        { text: "Отмена", onClick: () => resolve("cancel") },
+      ],
+    });
+  });
 }
 
 /* ---------- Авторизация ---------- */
@@ -1046,10 +1124,8 @@ async function closeTab(path) {
   const state = getState();
   const wasActive = state.activeTab === path;
 
-  const captured = editorScreen.captureDirty?.();
-  if (captured && captured.path === path && captured.unsaved) {
-    setDirty(path, captured.current);
-  }
+  const decision = await confirmSaveOnClose(path);
+  if (decision === "cancel") return;
 
   removeTab(path);
   renderTabs();

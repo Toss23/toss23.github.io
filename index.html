@@ -396,6 +396,46 @@
             <span class="editor-switch-slider"></span>
           </label>
         </div>
+
+        <div class="settings-group-title">Редактор</div>
+
+        <div class="editor-settings-row">
+          <span>Размер таба</span>
+          <select id="settings-editor-tab-size" class="settings-select">
+            <option value="2">2</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+          </select>
+        </div>
+        <div class="editor-settings-row">
+          <span>Шрифт</span>
+          <select id="settings-editor-font" class="settings-select">
+            <option value="system">Системный</option>
+            <option value="cascadia">Cascadia Code</option>
+            <option value="jetbrains">JetBrains Mono</option>
+          </select>
+        </div>
+        <div class="editor-settings-row">
+          <span>Автосохранение</span>
+          <label class="editor-switch">
+            <input id="settings-editor-autosave" type="checkbox">
+            <span class="editor-switch-slider"></span>
+          </label>
+        </div>
+        <div class="editor-settings-row">
+          <span>Перенос строк</span>
+          <label class="editor-switch">
+            <input id="settings-editor-wordwrap" type="checkbox">
+            <span class="editor-switch-slider"></span>
+          </label>
+        </div>
+        <div class="editor-settings-row">
+          <span>Подсветка скобок</span>
+          <label class="editor-switch">
+            <input id="settings-editor-bracket" type="checkbox">
+            <span class="editor-switch-slider"></span>
+          </label>
+        </div>
       </div>
       <div class="modal-actions">
         <button id="settings-done" class="primary">Готово</button>
