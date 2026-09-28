@@ -1,6 +1,10 @@
 // Резолвер префабов Unity: по sourceGuid из PrefabInstance находит
 // .prefab в репозитории, читает его и возвращает размеры bounding box.
 //
+// Если у префаба собственных SpriteRenderer нет (он контейнер),
+// рекурсивно идём во вложенные PrefabInstance и объединяем их bbox'ы.
+// Защита от циклов — visited set по guid, ограничение глубины — 6.
+//
 // Карта guid → path строится один раз и кэшируется в IndexedDB
 // (ключ = репозиторий + ветка + headSha). При следующем коммите
 // headSha меняется — карта строится заново.
@@ -9,17 +13,16 @@ import { get as idbGet, set as idbSet } from "https://esm.sh/idb-keyval@6";
 import { parseUnityYaml, buildSceneModel } from "./unity-yaml.js";
 
 const CACHE_PREFIX = "unity_prefabs:";
+const MAX_DEPTH = 6;
 
 function makeCacheKey(repoKey, headSha) {
   return CACHE_PREFIX + (repoKey || "repo") + "@" + (headSha || "unknown");
 }
 
 /**
- * Возвращает карту { guid: "путь/к/файлу.prefab" }.
+ * Карта { guid: "путь/к/файлу.prefab" }.
  * Сканирует все .prefab.meta в files и извлекает оттуда guid.
- * Результат кэшируется в IndexedDB.
- *
- * onProgress(done, total) вызывается по мере чтения .meta файлов.
+ * Кэшируется в IndexedDB.
  */
 export async function getPrefabMap({ repoKey, headSha, files, getContent, onProgress }) {
   const key = makeCacheKey(repoKey, headSha);
@@ -65,18 +68,28 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
 }
 
 /**
- * Читает .prefab и возвращает размеры bounding box по всем SpriteRenderer
- * внутри. Учитывает вложенные объекты и локальные трансформы префаба.
+ * Читает .prefab и возвращает bounding box по всем SpriteRenderer,
+ * включая вложенные префабы. Рекурсивный обход с защитой от циклов.
  *
  * Возвращает:
- *   { hasSprite: false }                          — если спрайтов нет
- *   { hasSprite: true, sizeX, sizeY,              — иначе
- *     centerX, centerY, color, spriteCount }
- *
- * Результат не кэшируется: размеры маленькие, а сам файл читается быстро.
- * Если понадобится — легко добавить кэш по ключу path@sha.
+ *   { hasSprite: false }                                    — если спрайтов нет
+ *   { hasSprite: true, minX, minY, maxX, maxY,              — иначе
+ *     color, spriteCount }
  */
-export async function loadPrefabBoundingBox({ prefabPath, getContent }) {
+export async function loadPrefabBoundingBox({
+  prefabPath,
+  getContent,
+  prefabMap,
+  selfGuid,
+  visited,
+  depth,
+}) {
+  if (typeof depth !== "number") depth = 0;
+  if (depth > MAX_DEPTH) return null;
+  if (!visited) visited = new Set();
+  if (selfGuid && visited.has(selfGuid)) return null;
+  if (selfGuid) visited.add(selfGuid);
+
   const text = await getContent(prefabPath);
   if (typeof text !== "string") return null;
 
@@ -91,30 +104,75 @@ export async function loadPrefabBoundingBox({ prefabPath, getContent }) {
 
   let minX = Infinity, maxX = -Infinity;
   let minY = Infinity, maxY = -Infinity;
-  let count = 0;
+  let spriteCount = 0;
   let firstColor = null;
 
-  for (const g of model.gameObjects) {
-    if (!g.hasSprite) continue;
-    const hw = (g.sizeX || 0) / 2;
-    const hh = (g.sizeY || 0) / 2;
-    if (g.worldX - hw < minX) minX = g.worldX - hw;
-    if (g.worldX + hw > maxX) maxX = g.worldX + hw;
-    if (g.worldY - hh < minY) minY = g.worldY - hh;
-    if (g.worldY + hh > maxY) maxY = g.worldY + hh;
-    if (!firstColor && g.spriteColor) firstColor = g.spriteColor;
-    count++;
+  function absorb(cx, cy, hw, hh, color) {
+    const x0 = cx - hw, x1 = cx + hw;
+    const y0 = cy - hh, y1 = cy + hh;
+    if (x0 < minX) minX = x0;
+    if (x1 > maxX) maxX = x1;
+    if (y0 < minY) minY = y0;
+    if (y1 > maxY) maxY = y1;
+    if (!firstColor && color) firstColor = color;
   }
 
-  if (!count) return { hasSprite: false };
+  // --- 1. Собственные спрайты
+  for (const g of model.gameObjects) {
+    if (!g.hasSprite || g.sizeX === null || g.sizeY === null) continue;
+    absorb(g.worldX, g.worldY, g.sizeX / 2, g.sizeY / 2, g.spriteColor);
+    spriteCount++;
+  }
+
+  // --- 2. Вложенные префабы — рекурсивно, с объединением bbox
+  if (prefabMap) {
+    for (const g of model.gameObjects) {
+      if (!g.isPrefabInstance) continue;
+      const nestedGuid = g.sourceGuid;
+      if (!nestedGuid) continue;
+      if (visited.has(nestedGuid)) continue;
+      const nestedPath = prefabMap[nestedGuid];
+      if (!nestedPath) continue;
+
+      let nested = null;
+      try {
+        nested = await loadPrefabBoundingBox({
+          prefabPath: nestedPath,
+          getContent,
+          prefabMap,
+          selfGuid: nestedGuid,
+          visited,
+          depth: depth + 1,
+        });
+      } catch (e) {
+        console.warn("nested prefab:", nestedPath, e);
+      }
+      if (!nested || !nested.hasSprite) continue;
+
+      // Применяем локальный сдвиг и масштаб инстанса.
+      const sx = g.localScale.x || 1;
+      const sy = g.localScale.y || 1;
+      const nxMinX = g.localPos.x + nested.minX * sx;
+      const nxMaxX = g.localPos.x + nested.maxX * sx;
+      const nyMinY = g.localPos.y + nested.minY * sy;
+      const nyMaxY = g.localPos.y + nested.maxY * sy;
+      if (nxMinX < minX) minX = nxMinX;
+      if (nxMaxX > maxX) maxX = nxMaxX;
+      if (nyMinY < minY) minY = nyMinY;
+      if (nyMaxY > maxY) maxY = nyMaxY;
+      if (!firstColor && nested.color) firstColor = nested.color;
+      spriteCount += nested.spriteCount || 0;
+    }
+  }
+
+  if (!spriteCount || !Number.isFinite(minX)) {
+    return { hasSprite: false };
+  }
 
   return {
     hasSprite: true,
-    sizeX: Math.max(0, maxX - minX),
-    sizeY: Math.max(0, maxY - minY),
-    centerX: (minX + maxX) / 2,
-    centerY: (minY + maxY) / 2,
+    minX, minY, maxX, maxY,
     color: firstColor || { r: 1, g: 1, b: 1, a: 1 },
-    spriteCount: count,
+    spriteCount,
   };
 }

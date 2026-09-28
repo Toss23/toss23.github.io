@@ -283,6 +283,10 @@ export function initUnitySceneScreen() {
           const info = await loadPrefabBoundingBox({
             prefabPath,
             getContent: context.getContent,
+            prefabMap,
+            selfGuid: guid,
+            visited: new Set(),
+            depth: 0,
           });
           if (info && info.hasSprite) resolved.set(guid, info);
         } catch (e) {
@@ -293,13 +297,24 @@ export function initUnitySceneScreen() {
       if (myGen !== generation) return;
 
       // Применяем результаты к префаб-инстансам.
+      // info содержит minX/minY/maxX/maxY в локальных единицах префаба
+      // (уже с учётом вложенных трансформов), поэтому умножаем на
+      // масштаб инстанса и учитываем сдвиг через размер + центр.
       for (const pi of instances) {
         const info = resolved.get(pi.sourceGuid);
         if (!info) continue;
+        const w = Math.max(0.001, info.maxX - info.minX);
+        const h = Math.max(0.001, info.maxY - info.minY);
+        const cx = (info.minX + info.maxX) / 2;
+        const cy = (info.minY + info.maxY) / 2;
         pi.hasSprite = true;
         pi.spriteColor = info.color || { r: 1, g: 1, b: 1, a: 1 };
-        pi.sizeX = Math.abs(info.sizeX * pi.localScale.x);
-        pi.sizeY = Math.abs(info.sizeY * pi.localScale.y);
+        pi.sizeX = Math.abs(w * pi.localScale.x);
+        pi.sizeY = Math.abs(h * pi.localScale.y);
+        // Смещение центра относительно origin инстанса — учитываем,
+        // чтобы префаб отрисовался там, где его видно в Unity.
+        pi.worldX = pi.localPos.x + cx * pi.localScale.x;
+        pi.worldY = pi.localPos.y + cy * pi.localScale.y;
       }
 
       // Перерисовываем и, если префаб выбран, обновляем инспектор.

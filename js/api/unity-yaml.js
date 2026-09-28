@@ -8,7 +8,10 @@
 
 import yaml from "https://esm.sh/js-yaml@4";
 
-const UNITY_TAG_RE = /^---\s+!u!(\d+)\s+&(\d+)\s*$/;
+// Заголовок документа. Может оканчиваться на " stripped" — так Unity
+// помечает компоненты, заимствованные из вложенного префаба. Их структура
+// урезана, но они нужны как связующие ссылки в иерархии.
+const UNITY_TAG_RE = /^---\s+!u!(\d+)\s+&(\d+)(\s+stripped)?\s*$/;
 
 const CLASS_GAMEOBJECT = 1;
 const CLASS_TRANSFORM = 4;
@@ -58,7 +61,12 @@ function splitDocuments(text) {
     const m = line.match(UNITY_TAG_RE);
     if (m) {
       if (current) docs.push(current);
-      current = { classID: parseInt(m[1], 10), fileID: m[2], body: [] };
+      current = {
+        classID: parseInt(m[1], 10),
+        fileID: m[2],
+        stripped: !!m[3],
+        body: [],
+      };
       continue;
     }
     if (current) current.body.push(line);
@@ -77,7 +85,7 @@ export function parseUnityYaml(text) {
     } catch (e) {
       data = null;
     }
-    docs.push({ classID: r.classID, fileID: r.fileID, data });
+    docs.push({ classID: r.classID, fileID: r.fileID, stripped: !!r.stripped, data });
   }
   return docs;
 }
@@ -218,6 +226,7 @@ export function buildSceneModel(docs) {
     if (node.isPrefabInstance) continue;
     let spriteW = null, spriteH = null, color = null;
     let canvasW = null, canvasH = null;
+    let spriteCount = 0;
 
     for (const cid of node.componentIds) {
       const cd = byFileId.get(cid);
@@ -225,11 +234,15 @@ export function buildSceneModel(docs) {
 
       if (cd.classID === CLASS_SPRITERENDERER && cd.data && cd.data.SpriteRenderer) {
         const sr = cd.data.SpriteRenderer;
+        spriteCount++;
         if (sr.m_Size) {
-          spriteW = toNum(sr.m_Size.x, 1);
-          spriteH = toNum(sr.m_Size.y, 1);
+          const sw = Math.abs(toNum(sr.m_Size.x, 1) * node.localScale.x);
+          const sh = Math.abs(toNum(sr.m_Size.y, 1) * node.localScale.y);
+          // Объединяем габариты всех спрайтов: берём максимум.
+          if (spriteW === null || sw > spriteW) spriteW = sw;
+          if (spriteH === null || sh > spriteH) spriteH = sh;
         }
-        if (sr.m_Color) color = sr.m_Color;
+        if (sr.m_Color && !color) color = sr.m_Color;
       }
 
       if (cd.classID === CLASS_CANVAS) {
@@ -262,8 +275,9 @@ export function buildSceneModel(docs) {
     if (spriteW !== null && spriteH !== null) {
       node.hasSprite = true;
       node.spriteColor = color || { r: 1, g: 1, b: 1, a: 1 };
-      node.sizeX = Math.abs(spriteW * node.localScale.x);
-      node.sizeY = Math.abs(spriteH * node.localScale.y);
+      node.sizeX = Math.abs(spriteW);
+      node.sizeY = Math.abs(spriteH);
+      node.spriteCount = spriteCount;
     } else if (node.isCanvas && canvasW !== null && canvasH !== null) {
       node.sizeX = Math.abs(canvasW);
       node.sizeY = Math.abs(canvasH);
