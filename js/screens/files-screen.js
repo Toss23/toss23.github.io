@@ -1,8 +1,9 @@
 import { $, el, clear, option } from "@core/dom.js";
 import { listDirectory } from "@core/tree.js";
 import { formatSize } from "@core/format.js";
+import { getIconsEnabled, getIconsStandard, getIconsUnity } from "@core/settings.js";
 
-const FILE_ICONS = {
+const FILE_ICONS_STANDARD = {
   cs: "#\uFE0F\u20E3",
   csproj: "\uD83D\uDD37",
   sln: "\uD83D\uDD37",
@@ -66,19 +67,97 @@ const FILE_ICONS = {
   csv: "\uD83D\uDCCA",
   tsv: "\uD83D\uDCCA",
   env: "\uD83D\uDD10",
+  tga: "\uD83D\uDDBC\uFE0F",
+  tif: "\uD83D\uDDBC\uFE0F",
+  tiff: "\uD83D\uDDBC\uFE0F",
+  exr: "\uD83D\uDDBC\uFE0F",
+  hdr: "\uD83D\uDDBC\uFE0F",
+  wav: "\uD83C\uDFB5",
+  mp3: "\uD83C\uDFB5",
+  ogg: "\uD83C\uDFB5",
+  aiff: "\uD83C\uDFB5",
+  flac: "\uD83C\uDFB5",
+  mp4: "\uD83C\uDFA5",
+  mov: "\uD83C\uDFA5",
+  webm: "\uD83C\uDFA5",
+  avi: "\uD83C\uDFA5",
+  ttf: "\uD83D\uDD24",
+  otf: "\uD83D\uDD24",
+};
+
+// Иконки для файлов Unity.
+const FILE_ICONS_UNITY = {
+  unity: "\uD83C\uDFAC",
+  prefab: "\uD83D\uDCE6",
+  asset: "\uD83D\uDDC2\uFE0F",
+  meta: "\uD83C\uDFF7\uFE0F",
+  mat: "\uD83C\uDFA8",
+  anim: "\uD83C\uDF9E\uFE0F",
+  controller: "\uD83D\uDD79\uFE0F",
+  overridecontroller: "\uD83D\uDD79\uFE0F",
+  physicmaterial: "\u2699\uFE0F",
+  physicsmaterial2d: "\u2699\uFE0F",
+  shader: "\u2728",
+  cginc: "\u2728",
+  hlsl: "\u2728",
+  glslinc: "\u2728",
+  compute: "\u2728",
+  vfx: "\u2728",
+  uxml: "\uD83E\uDDE9",
+  uss: "\uD83E\uDDE9",
+  asmdef: "\uD83E\uDDF1",
+  asmref: "\uD83E\uDDF1",
+  rsp: "\uD83D\uDCDC",
+  fbx: "\uD83E\uDDCA",
+  obj: "\uD83E\uDDCA",
+  dae: "\uD83E\uDDCA",
+  "3ds": "\uD83E\uDDCA",
+  blend: "\uD83E\uDDCA",
+  max: "\uD83E\uDDCA",
+  mb: "\uD83E\uDDCA",
+  ma: "\uD83E\uDDCA",
+  skp: "\uD83E\uDDCA",
+  spm: "\uD83C\uDF33",
+  st: "\uD83C\uDF33",
+  dds: "\uD83E\uDDCA",
+  ktx: "\uD83E\uDDCA",
+  pvr: "\uD83E\uDDCA",
+  astc: "\uD83E\uDDCA",
+  cubemap: "\uD83C\uDF0C",
+  rendertexture: "\uD83D\uDDA5\uFE0F",
+  spriteatlas: "\uD83D\uDDFA\uFE0F",
+  terrainlayer: "\u26F0\uFE0F",
+  guiskin: "\uD83C\uDF9B\uFE0F",
+  mask: "\uD83C\uDFAD",
+  flare: "\u2600\uFE0F",
+  fontsettings: "\uD83D\uDD24",
+  sbsar: "\uD83E\uDDEA",
+  signal: "\uD83D\uDCE1",
 };
 
 const FILE_ICON_DEFAULT = "\uD83D\uDCC4";
 
 function fileIcon(path) {
+  // Главный тумблер кастомных иконок.
+  if (!getIconsEnabled()) return FILE_ICON_DEFAULT;
+
   const name = (path.split("/").pop() || "").toLowerCase();
-  if (name === ".gitignore" || name === ".gitattributes" || name === ".gitmodules") return "\uD83D\uDD27";
-  if (name === "dockerfile") return "\uD83D\uDC33";
-  if (name === ".editorconfig") return "\u2699\uFE0F";
   const dot = name.lastIndexOf(".");
-  if (dot < 0) return FILE_ICON_DEFAULT;
-  const ext = name.slice(dot + 1);
-  return FILE_ICONS[ext] || FILE_ICON_DEFAULT;
+  const ext = dot < 0 ? "" : name.slice(dot + 1);
+
+  // Unity-иконки проверяем раньше стандартных.
+  if (getIconsUnity() && ext && FILE_ICONS_UNITY[ext]) {
+    return FILE_ICONS_UNITY[ext];
+  }
+
+  if (getIconsStandard()) {
+    if (name === ".gitignore" || name === ".gitattributes" || name === ".gitmodules") return "\uD83D\uDD27";
+    if (name === "dockerfile") return "\uD83D\uDC33";
+    if (name === ".editorconfig") return "\u2699\uFE0F";
+    if (ext && FILE_ICONS_STANDARD[ext]) return FILE_ICONS_STANDARD[ext];
+  }
+
+  return FILE_ICON_DEFAULT;
 }
 
 // Тач-устройство: не разрешаем HTML5 drag — на Android он конфликтует с long-press.

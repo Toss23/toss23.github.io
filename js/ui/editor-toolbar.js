@@ -213,6 +213,13 @@ export function initEditorToolbar({ editorScreen, customKeyboard }) {
     customKbToggle.addEventListener("change", () => {
       customKeyboard.setEnabled(customKbToggle.checked);
     });
+    // Синхронизация: если клавиатуру переключили в общих настройках —
+    // обновить состояние тумблера в редакторе.
+    window.addEventListener("settings-changed", () => {
+      if (customKeyboard && customKeyboard.isEnabled) {
+        customKbToggle.checked = customKeyboard.isEnabled();
+      }
+    });
   }
 
   return { hidePanel, applyFontSize };

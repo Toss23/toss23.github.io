@@ -70,6 +70,7 @@
   <header id="app-header" class="hidden">
     <span id="user-info"></span>
     <button id="fullscreen-btn" class="icon-btn" title="На весь экран">⤢</button>
+    <button id="settings-btn" class="icon-btn" title="Настройки">⚙</button>
     <button id="logout" class="icon-btn">Выйти</button>
   </header>
 
@@ -334,6 +335,49 @@
       </div>
       <div class="modal-actions">
         <button id="editor-settings-done" class="primary">Готово</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка настроек приложения -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content dialog-content">
+      <div class="modal-head">
+        <h3>Настройки</h3>
+        <button id="settings-close" class="icon-btn" title="Закрыть">✕</button>
+      </div>
+      <div class="editor-settings-body">
+        <div class="editor-settings-row">
+          <span>Кастомные иконки</span>
+          <label class="editor-switch">
+            <input id="settings-icons-enabled" type="checkbox">
+            <span class="editor-switch-slider"></span>
+          </label>
+        </div>
+        <div id="settings-icons-standard-row" class="editor-settings-row settings-sub">
+          <span>Стандартные файлы</span>
+          <label class="editor-switch">
+            <input id="settings-icons-standard" type="checkbox">
+            <span class="editor-switch-slider"></span>
+          </label>
+        </div>
+        <div id="settings-icons-unity-row" class="editor-settings-row settings-sub">
+          <span>Файлы Unity</span>
+          <label class="editor-switch">
+            <input id="settings-icons-unity" type="checkbox">
+            <span class="editor-switch-slider"></span>
+          </label>
+        </div>
+        <div id="settings-keyboard-row" class="editor-settings-row">
+          <span>Кастомная клавиатура</span>
+          <label class="editor-switch">
+            <input id="settings-keyboard-enabled" type="checkbox">
+            <span class="editor-switch-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="settings-done" class="primary">Готово</button>
       </div>
     </div>
   </div>

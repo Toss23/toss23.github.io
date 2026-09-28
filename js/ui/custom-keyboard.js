@@ -43,6 +43,11 @@ function loadEnabledPref() {
 
 function saveEnabledPref(v) {
   try { localStorage.setItem(MODE_KEY, v ? "1" : "0"); } catch {}
+  try {
+    window.dispatchEvent(new CustomEvent("settings-changed", {
+      detail: { key: MODE_KEY, value: !!v },
+    }));
+  } catch {}
 }
 
 export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {

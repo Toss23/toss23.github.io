@@ -43,6 +43,7 @@ import { initMapSelectModal } from "@ui/map-select-modal.js";
 import { initEditorKeybar } from "@ui/editor-keybar.js";
 import { initCustomKeyboard } from "@ui/custom-keyboard.js";
 import { initKeyboardViewport } from "@ui/keyboard-viewport.js";
+import { initSettingsModal } from "@ui/settings-modal.js";
 
 import { initAuthScreen } from "@screens/auth-screen.js";
 import { initReposScreen } from "@screens/repos-screen.js";
@@ -259,6 +260,12 @@ const customKeyboard = initCustomKeyboard({
   editorScreen,
   onVisibilityChange: () => refreshNav(),
 });
+
+const settingsModal = initSettingsModal({ customKeyboard });
+const btnSettings = document.getElementById("settings-btn");
+if (btnSettings) {
+  btnSettings.addEventListener("click", () => settingsModal.open());
+}
 
 initEditorToolbar({ editorScreen, customKeyboard });
 
@@ -3548,6 +3555,13 @@ function commitCount() {
 
 subscribe(() => {
   nav.setCommitCount(commitCount());
+});
+
+// Реакция на изменения настроек: перерисовать список файлов,
+// чтобы новые иконки применились мгновенно.
+window.addEventListener("settings-changed", () => {
+  const s = getState();
+  if (s.screen === SCREENS.FILES) renderFiles();
 });
 
 /* ---------- Старт ---------- */
