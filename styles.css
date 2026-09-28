@@ -1,28 +1,4 @@
 /* ============================================================
-   Шрифты редактора
-   ============================================================ */
-@font-face {
-  font-family: "Cascadia Code";
-  src:
-    local("Cascadia Code"),
-    local("CascadiaCode"),
-    url("./fonts/CascadiaCode.woff2") format("woff2");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "JetBrains Mono";
-  src:
-    local("JetBrains Mono"),
-    local("JetBrainsMono"),
-    url("./fonts/JetBrainsMono.woff2") format("woff2");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-/* ============================================================
    Reset и база
    ============================================================ */
 * { box-sizing: border-box; }
@@ -509,7 +485,6 @@ body {
   border-right: 1px solid #333;
   overflow: hidden;
   position: relative;
-  /* Номера строк всегда на системном моно — шрифт кода их не касается. */
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: var(--editor-font-size, 14px);
   line-height: 1.55;
@@ -543,7 +518,7 @@ body {
   padding: 12px;
   border: none;
   outline: none;
-  font-family: var(--editor-font-family, ui-monospace, Menlo, Consolas, monospace);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: var(--editor-font-size, 14px);
   line-height: 1.55;
   tab-size: var(--editor-tab-size, 4);
@@ -552,32 +527,6 @@ body {
   overflow: auto;
   box-sizing: border-box;
   letter-spacing: 0;
-}
-
-/* Одинаковый рендер текста в textarea и в подсветке.
-   Лигатуры (Cascadia Code, JetBrains Mono) в textarea и pre дают
-   разную ширину глифов — из-за этого курсор «уезжает» от текста.
-   Отключаем лигатуры в обоих слоях. */
-#file-editor #file-content,
-#file-editor .editor-highlight {
-  font-variant-ligatures: none;
-  font-feature-settings: "liga" 0, "calt" 0, "dlig" 0;
-}
-
-/* Шрифт кода. Управляется атрибутом data-editor-font на <html>,
-   который выставляет editor-screen.js. Номера строк (.editor-line-numbers)
-   сюда не входят — они всегда на системном моно. */
-html[data-editor-font="cascadia"] #file-editor #file-content,
-html[data-editor-font="cascadia"] #file-editor .editor-highlight {
-  font-family: "Cascadia Code", ui-monospace, Menlo, Consolas, monospace !important;
-}
-html[data-editor-font="jetbrains"] #file-editor #file-content,
-html[data-editor-font="jetbrains"] #file-editor .editor-highlight {
-  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace !important;
-}
-html[data-editor-font="system"] #file-editor #file-content,
-html[data-editor-font="system"] #file-editor .editor-highlight {
-  font-family: ui-monospace, Menlo, Consolas, monospace !important;
 }
 
 /* Перенос строк (word wrap) — включается классом .wrap на #file-editor */

@@ -1,7 +1,6 @@
 import { $ } from "@core/dom.js";
 import {
   getEditorTabSize, setEditorTabSize,
-  getEditorFontFamily, setEditorFontFamily,
   getEditorAutosave, setEditorAutosave,
   getEditorWordWrap, setEditorWordWrap,
   getEditorBracketHighlight, setEditorBracketHighlight,
@@ -232,14 +231,12 @@ export function initEditorToolbar({ editorScreen, customKeyboard }) {
   /* ---------- Настройки редактора в модалке редактора ---------- */
 
   const selTabSize = $("editor-tab-size");
-  const selFont = $("editor-font-family");
   const cbAutosave = $("editor-autosave");
   const cbWordWrap = $("editor-wordwrap");
   const cbBracket = $("editor-bracket");
 
   function applyEditorSettingsToUI() {
     if (selTabSize) selTabSize.value = String(getEditorTabSize());
-    if (selFont) selFont.value = getEditorFontFamily();
     if (cbAutosave) cbAutosave.checked = getEditorAutosave();
     if (cbWordWrap) cbWordWrap.checked = getEditorWordWrap();
     if (cbBracket) cbBracket.checked = getEditorBracketHighlight();
@@ -248,11 +245,6 @@ export function initEditorToolbar({ editorScreen, customKeyboard }) {
   if (selTabSize) {
     selTabSize.addEventListener("change", () => {
       setEditorTabSize(parseInt(selTabSize.value, 10));
-    });
-  }
-  if (selFont) {
-    selFont.addEventListener("change", () => {
-      setEditorFontFamily(selFont.value);
     });
   }
   if (cbAutosave) {

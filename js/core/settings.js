@@ -8,7 +8,6 @@ const KEYS = {
   ICONS_UNITY: "icons_custom_unity",
   KB_ENABLED: "kb_custom_enabled",
   EDITOR_TAB_SIZE: "editor_tab_size",
-  EDITOR_FONT_FAMILY: "editor_font_family",
   EDITOR_AUTOSAVE: "editor_autosave",
   EDITOR_WORD_WRAP: "editor_word_wrap",
   EDITOR_BRACKET_HIGHLIGHT: "editor_bracket_highlight",
@@ -32,20 +31,6 @@ function writeBool(key, v) {
     window.dispatchEvent(new CustomEvent(EVENT, {
       detail: { key, value: !!v },
     }));
-  } catch {}
-}
-
-function readString(key, def) {
-  try {
-    const v = localStorage.getItem(key);
-    return v === null ? def : v;
-  } catch { return def; }
-}
-
-function writeString(key, v) {
-  try { localStorage.setItem(key, String(v)); } catch {}
-  try {
-    window.dispatchEvent(new CustomEvent(EVENT, { detail: { key, value: v } }));
   } catch {}
 }
 
@@ -93,15 +78,6 @@ export function getEditorTabSize() {
 export function setEditorTabSize(v) {
   const n = parseInt(v, 10);
   writeInt(KEYS.EDITOR_TAB_SIZE, (n === 2 || n === 4 || n === 8) ? n : 4);
-}
-
-export function getEditorFontFamily() {
-  const v = readString(KEYS.EDITOR_FONT_FAMILY, "system");
-  return (v === "cascadia" || v === "jetbrains") ? v : "system";
-}
-export function setEditorFontFamily(v) {
-  const s = String(v || "system");
-  writeString(KEYS.EDITOR_FONT_FAMILY, (s === "cascadia" || s === "jetbrains") ? s : "system");
 }
 
 export function getEditorAutosave() { return readBool(KEYS.EDITOR_AUTOSAVE, true); }

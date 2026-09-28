@@ -3,7 +3,7 @@ import { UI } from "@core/config.js";
 import { gitBlobSha } from "@core/git-sha.js";
 import { fromLf } from "@core/encoding.js";
 import { tokenize, renderTokens, renderPlain, findBracketPair } from "@core/csharp-highlight.js";
-import { getEditorTabSize, getEditorAutosave, getEditorBracketHighlight, getEditorWordWrap, getEditorFontFamily } from "@core/settings.js";
+import { getEditorTabSize, getEditorAutosave, getEditorBracketHighlight, getEditorWordWrap } from "@core/settings.js";
 
 function isCSharpPath(path) {
   return typeof path === "string" && /\.cs$/i.test(path);
