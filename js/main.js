@@ -1633,10 +1633,19 @@ async function handleAiJsonLoad(text) {
   pendingCommitMessage = parsed.commit || null;
 
   const items = [];
-  for (const change of parsed.changes) {
-    const content = await getCurrentFileContent(change.path);
-    const check = checkChange(change, content);
-    items.push({ change, check, checked: check.ok });
+  const total = parsed.changes.length;
+  const token = total ? showBusy("Проверка изменений…") : null;
+  try {
+    let done = 0;
+    for (const change of parsed.changes) {
+      done++;
+      updateBusyText(`Проверка: ${done} / ${total} · ${change.path}`);
+      const content = await getCurrentFileContent(change.path);
+      const check = checkChange(change, content);
+      items.push({ change, check, checked: check.ok });
+    }
+  } finally {
+    if (token) hideBusy(token);
   }
 
   aiModal.showPreview(items);
@@ -1646,21 +1655,30 @@ async function handleAiApply(changes) {
   if (!changes.length) return;
   const applied = [];
   const failed = [];
+  const total = changes.length;
+  const token = showBusy("Применение изменений…");
 
-  for (const change of changes) {
-    try {
-      const content = await getCurrentFileContent(change.path);
-      const check = checkChange(change, content);
-      if (!check.ok) {
-        failed.push({ change, reason: check.reason });
-        continue;
+  try {
+    let done = 0;
+    for (const change of changes) {
+      done++;
+      updateBusyText(`Применение: ${done} / ${total} · ${change.path}`);
+      try {
+        const content = await getCurrentFileContent(change.path);
+        const check = checkChange(change, content);
+        if (!check.ok) {
+          failed.push({ change, reason: check.reason });
+          continue;
+        }
+        const result = applyChange(change, content);
+        await applyAiResult(change.path, result);
+        applied.push({ type: change.type, path: change.path });
+      } catch (e) {
+        failed.push({ change, reason: e.message || "неизвестная ошибка" });
       }
-      const result = applyChange(change, content);
-      await applyAiResult(change.path, result);
-      applied.push({ type: change.type, path: change.path });
-    } catch (e) {
-      failed.push({ change, reason: e.message || "неизвестная ошибка" });
     }
+  } finally {
+    hideBusy(token);
   }
 
   aiModal.showReport({ applied, failed });
