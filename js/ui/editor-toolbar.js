@@ -1,4 +1,12 @@
 import { $ } from "@core/dom.js";
+import {
+  getEditorTabSize, setEditorTabSize,
+  getEditorFontFamily, setEditorFontFamily,
+  getEditorAutosave, setEditorAutosave,
+  getEditorWordWrap, setEditorWordWrap,
+  getEditorBracketHighlight, setEditorBracketHighlight,
+  SETTINGS_EVENT,
+} from "@core/settings.js";
 
 const STORAGE_KEY = "editor_font_size";
 const DEFAULT_FONT_SIZE = 14;
@@ -188,6 +196,7 @@ export function initEditorToolbar({ editorScreen, customKeyboard }) {
     btnSettings.addEventListener("click", () => {
       if (!settingsModal) return;
       loadFontSize();
+      applyEditorSettingsToUI();
       settingsModal.classList.remove("hidden");
     });
   }
@@ -213,14 +222,50 @@ export function initEditorToolbar({ editorScreen, customKeyboard }) {
     customKbToggle.addEventListener("change", () => {
       customKeyboard.setEnabled(customKbToggle.checked);
     });
-    // Синхронизация: если клавиатуру переключили в общих настройках —
-    // обновить состояние тумблера в редакторе.
-    window.addEventListener("settings-changed", () => {
+    window.addEventListener(SETTINGS_EVENT, () => {
       if (customKeyboard && customKeyboard.isEnabled) {
         customKbToggle.checked = customKeyboard.isEnabled();
       }
     });
   }
+
+  /* ---------- Настройки редактора в модалке редактора ---------- */
+
+  const selTabSize = $("editor-tab-size");
+  const selFont = $("editor-font-family");
+  const cbAutosave = $("editor-autosave");
+  const cbWordWrap = $("editor-wordwrap");
+  const cbBracket = $("editor-bracket");
+
+  function applyEditorSettingsToUI() {
+    if (selTabSize) selTabSize.value = String(getEditorTabSize());
+    if (selFont) selFont.value = getEditorFontFamily();
+    if (cbAutosave) cbAutosave.checked = getEditorAutosave();
+    if (cbWordWrap) cbWordWrap.checked = getEditorWordWrap();
+    if (cbBracket) cbBracket.checked = getEditorBracketHighlight();
+  }
+
+  if (selTabSize) {
+    selTabSize.addEventListener("change", () => {
+      setEditorTabSize(parseInt(selTabSize.value, 10));
+    });
+  }
+  if (selFont) {
+    selFont.addEventListener("change", () => {
+      setEditorFontFamily(selFont.value);
+    });
+  }
+  if (cbAutosave) {
+    cbAutosave.addEventListener("change", () => setEditorAutosave(cbAutosave.checked));
+  }
+  if (cbWordWrap) {
+    cbWordWrap.addEventListener("change", () => setEditorWordWrap(cbWordWrap.checked));
+  }
+  if (cbBracket) {
+    cbBracket.addEventListener("change", () => setEditorBracketHighlight(cbBracket.checked));
+  }
+
+  window.addEventListener(SETTINGS_EVENT, applyEditorSettingsToUI);
 
   return { hidePanel, applyFontSize };
 }

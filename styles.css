@@ -3,15 +3,21 @@
    ============================================================ */
 @font-face {
   font-family: "Cascadia Code";
-  src: url("./fonts/CascadiaCode.woff2") format("woff2");
-  font-weight: 200 700;
+  src:
+    local("Cascadia Code"),
+    local("CascadiaCode"),
+    url("./fonts/CascadiaCode.woff2") format("woff2");
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: "JetBrains Mono";
-  src: url("./fonts/JetBrainsMono.woff2") format("woff2");
-  font-weight: 100 800;
+  src:
+    local("JetBrains Mono"),
+    local("JetBrainsMono"),
+    url("./fonts/JetBrainsMono.woff2") format("woff2");
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
@@ -545,6 +551,17 @@ body {
   overflow: auto;
   box-sizing: border-box;
   letter-spacing: 0;
+}
+
+/* Одинаковый рендер текста в textarea и в подсветке.
+   Лигатуры (Cascadia Code, JetBrains Mono) в textarea и pre дают
+   разную ширину глифов — из-за этого курсор «уезжает» от текста.
+   Отключаем лигатуры в обоих слоях. */
+#file-editor #file-content,
+#file-editor .editor-highlight,
+.editor-line-numbers {
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0, "dlig" 0;
 }
 
 /* Перенос строк (word wrap) — включается классом .wrap на #file-editor */

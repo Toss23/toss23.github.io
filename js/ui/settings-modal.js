@@ -5,11 +5,6 @@ import {
   getIconsStandard, setIconsStandard,
   getIconsUnity, setIconsUnity,
   getKeyboardEnabled,
-  getEditorTabSize, setEditorTabSize,
-  getEditorFontFamily, setEditorFontFamily,
-  getEditorAutosave, setEditorAutosave,
-  getEditorWordWrap, setEditorWordWrap,
-  getEditorBracketHighlight, setEditorBracketHighlight,
   SETTINGS_EVENT,
 } from "@core/settings.js";
 
@@ -25,12 +20,6 @@ export function initSettingsModal({ customKeyboard } = {}) {
   const rowUnity = $("settings-icons-unity-row");
   const rowKeyboard = $("settings-keyboard-row");
 
-  const selTabSize = $("settings-editor-tab-size");
-  const selFont = $("settings-editor-font");
-  const cbAutosave = $("settings-editor-autosave");
-  const cbWordWrap = $("settings-editor-wordwrap");
-  const cbBracket = $("settings-editor-bracket");
-
   if (!modal) return { open() {} };
 
   function applyState() {
@@ -38,12 +27,6 @@ export function initSettingsModal({ customKeyboard } = {}) {
     if (cbStandard) cbStandard.checked = getIconsStandard();
     if (cbUnity) cbUnity.checked = getIconsUnity();
     if (cbKeyboard) cbKeyboard.checked = getKeyboardEnabled();
-
-    if (selTabSize) selTabSize.value = String(getEditorTabSize());
-    if (selFont) selFont.value = getEditorFontFamily();
-    if (cbAutosave) cbAutosave.checked = getEditorAutosave();
-    if (cbWordWrap) cbWordWrap.checked = getEditorWordWrap();
-    if (cbBracket) cbBracket.checked = getEditorBracketHighlight();
 
     // Подпункты иконок видны только при включённом главном тумблере.
     const main = getIconsEnabled();
@@ -84,26 +67,6 @@ export function initSettingsModal({ customKeyboard } = {}) {
         customKeyboard.setEnabled(v);
       }
     });
-  }
-
-  if (selTabSize) {
-    selTabSize.addEventListener("change", () => {
-      setEditorTabSize(parseInt(selTabSize.value, 10));
-    });
-  }
-  if (selFont) {
-    selFont.addEventListener("change", () => {
-      setEditorFontFamily(selFont.value);
-    });
-  }
-  if (cbAutosave) {
-    cbAutosave.addEventListener("change", () => setEditorAutosave(cbAutosave.checked));
-  }
-  if (cbWordWrap) {
-    cbWordWrap.addEventListener("change", () => setEditorWordWrap(cbWordWrap.checked));
-  }
-  if (cbBracket) {
-    cbBracket.addEventListener("change", () => setEditorBracketHighlight(cbBracket.checked));
   }
 
   // Синхронизация с редактором: если там переключили клавиатуру —
