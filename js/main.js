@@ -509,6 +509,7 @@ async function exitRepo() {
   clearDeleted();
   clearRemoteChanges();
   setSelectionMode(false);
+  clearLastSession();
   setScreen(SCREENS.REPOS);
   // Обновляем список — у текущего репо может теперь быть или не быть изменений.
   refreshRepoDirty();
@@ -594,6 +595,83 @@ function askSaveOrDiscard(path) {
   });
 }
 
+/* ---------- Восстановление последней сессии ---------- */
+
+const LAST_SESSION_KEY = "last_session";
+
+// Сохраняет текущий репозиторий/ветку/режим, чтобы восстановить после перезагрузки.
+function saveLastSession() {
+  const { repo, branch, mode } = getState();
+  if (!repo || !mode) return;
+  try {
+    localStorage.setItem(LAST_SESSION_KEY, JSON.stringify({
+      owner: repo.owner,
+      name: repo.name,
+      fullName: repo.fullName,
+      defaultBranch: repo.defaultBranch,
+      branch: branch || repo.defaultBranch,
+      mode,
+    }));
+  } catch {}
+}
+
+function clearLastSession() {
+  try { localStorage.removeItem(LAST_SESSION_KEY); } catch {}
+}
+
+function loadLastSession() {
+  try {
+    const raw = localStorage.getItem(LAST_SESSION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || !data.owner || !data.name) return null;
+    if (data.mode !== "local" && data.mode !== "remote") return null;
+    return data;
+  } catch { return null; }
+}
+
+// Собирает объект repo в форме, ожидаемой openRepoRemote / enterLocalMode.
+function sessionToRepo(session) {
+  return {
+    owner: { login: session.owner },
+    name: session.name,
+    full_name: session.fullName || (session.owner + "/" + session.name),
+    default_branch: session.defaultBranch || session.branch || "main",
+  };
+}
+
+// Восстанавливает последнюю сессию после логина.
+// Возвращает true, если удалось открыть репозиторий.
+async function tryRestoreSession() {
+  const session = loadLastSession();
+  if (!session) return false;
+
+  const repo = sessionToRepo(session);
+  try {
+    if (session.mode === "local") {
+      const key = storage.makeRepoKey(session.owner, session.name, session.defaultBranch);
+      const meta = await storage.loadRepoMeta(key);
+      if (!meta) { clearLastSession(); return false; }
+      await enterLocalMode(repo, meta);
+      if (getState().mode !== "local") { clearLastSession(); return false; }
+      return true;
+    }
+    if (session.mode === "remote") {
+      await openRepoRemote(repo);
+      if (getState().mode !== "remote") { clearLastSession(); return false; }
+      // Если пользователь был на другой ветке — переключаемся.
+      if (session.branch && session.branch !== repo.default_branch) {
+        await selectBranch(session.branch);
+      }
+      return true;
+    }
+  } catch (e) {
+    console.warn("restore session:", e);
+  }
+  clearLastSession();
+  return false;
+}
+
 /* ---------- Авторизация ---------- */
 
 async function login(token) {
@@ -609,8 +687,16 @@ async function login(token) {
     const persistent = await storage.requestPersistent();
     console.log("Persistent storage:", persistent);
 
-    setScreen(SCREENS.REPOS);
+    // Загружаем список репозиториев (нужен в state.repos).
     await loadAllRepos();
+
+    // Пытаемся восстановить последнюю открытую сессию.
+    // Если получилось — экран уже переключён на файлы.
+    const restored = await tryRestoreSession();
+    if (restored) return;
+
+    // Иначе — показываем список репозиториев.
+    setScreen(SCREENS.REPOS);
   } catch (e) {
     setStatus("Ошибка токена: " + e.message, true);
     clearToken();
@@ -638,6 +724,7 @@ function logout() {
   reposScreen.reset();
   setState({ clonedDirty: new Set() });
   header.setLoggedOut();
+  clearLastSession();
   setScreen(SCREENS.AUTH);
 }
 
@@ -834,6 +921,7 @@ async function openRepoRemote(repo) {
 
   setScreen(SCREENS.FILES);
   renderFiles();
+  saveLastSession();
 }
 
 async function selectBranch(branch) {
@@ -866,6 +954,7 @@ async function selectBranch(branch) {
   editorScreen.close();
   await loadTree();
   renderFiles();
+  saveLastSession();
 }
 
 async function loadTree() {
@@ -1017,6 +1106,7 @@ async function enterLocalMode(repo, meta) {
   renderFiles();
   setStatus(`📦 Локальная копия · ${meta.branch} · ${formatSize(meta.totalBytes || 0)}`);
   startLocalWatch();
+  saveLastSession();
 }
 
 async function cloneAndOpen(repo) {
