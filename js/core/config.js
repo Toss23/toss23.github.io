@@ -21,6 +21,7 @@ export const SCREENS = {
   HISTORY: "history",
   IMAGE: "image",
   AUDIO: "audio",
+  UNITY_SCENE: "unity-scene",
 };
 
 // Резервный адрес репозитория приложения. Используется, когда hostname
@@ -52,4 +53,10 @@ export function isAudioPath(path) {
   const dot = path.lastIndexOf(".");
   if (dot < 0) return false;
   return AUDIO_EXTENSIONS.has(path.slice(dot + 1).toLowerCase());
+}
+
+// Сцены Unity (.unity). Пока только они — .prefab добавим отдельно.
+export function isUnityScenePath(path) {
+  if (!path) return false;
+  return /\.unity$/i.test(path);
 }

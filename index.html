@@ -166,6 +166,26 @@
     </div>
   </section>
 
+  <!-- Экран сцены Unity (read-only) -->
+  <section id="screen-unity-scene" class="screen hidden">
+    <div class="screen-header">
+      <span id="unity-scene-path" class="file-path"></span>
+    </div>
+    <div class="unity-scene-wrap">
+      <div class="unity-panel unity-hierarchy">
+        <div class="unity-panel-title">Иерархия</div>
+        <ul id="unity-hierarchy-list" class="unity-tree"></ul>
+      </div>
+      <div class="unity-view">
+        <canvas id="unity-canvas" class="unity-canvas"></canvas>
+      </div>
+      <div class="unity-panel unity-inspector">
+        <div class="unity-panel-title">Инспектор</div>
+        <div id="unity-inspector-body" class="unity-inspector-body"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- Экран воспроизведения аудио -->
   <section id="screen-audio" class="screen hidden">
     <div class="screen-header">

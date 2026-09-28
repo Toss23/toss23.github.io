@@ -55,9 +55,10 @@ import { initMapPreviewHighlight } from "@ui/map-preview-highlight.js";
 import { initHistoryScreen } from "@screens/history-screen.js";
 import { initImageScreen } from "@screens/image-screen.js";
 import { initAudioScreen } from "@screens/audio-screen.js";
+import { initUnitySceneScreen } from "@screens/unity-scene-screen.js";
 import { initCommitScreen } from "@screens/commit-screen.js";
 
-import { SCREENS, isImagePath, isAudioPath, APP_REPO } from "@core/config.js";
+import { SCREENS, isImagePath, isAudioPath, isUnityScenePath, APP_REPO } from "@core/config.js";
 import * as storage from "@core/storage.js";
 import { getEditorAutosave } from "@core/settings.js";
 
@@ -318,6 +319,7 @@ const historyModal = initHistoryModal({ onRevert: handleRevertCommit });
 
 const imageScreen = initImageScreen();
 const audioScreen = initAudioScreen();
+const unitySceneScreen = initUnitySceneScreen();
 
 /* ---------- Авто-проверка обновлений в local ---------- */
 
@@ -391,13 +393,14 @@ const SCREEN_IDS = {
   [SCREENS.HISTORY]: "screen-history",
   [SCREENS.IMAGE]: "screen-image",
   [SCREENS.AUDIO]: "screen-audio",
+  [SCREENS.UNITY_SCENE]: "screen-unity-scene",
 };
 
 function refreshNav() {
   const s = getState().screen;
   const isAppScreen = s === SCREENS.FILES || s === SCREENS.EDITOR ||
                       s === SCREENS.HISTORY || s === SCREENS.IMAGE ||
-                      s === SCREENS.AUDIO;
+                      s === SCREENS.AUDIO || s === SCREENS.UNITY_SCENE;
   if (!isAppScreen) {
     nav.setVisible(false);
     return;
@@ -415,6 +418,9 @@ function setScreen(name) {
   const prev = getState().screen;
   if (prev === SCREENS.AUDIO && name !== SCREENS.AUDIO) {
     try { audioScreen.close(); } catch {}
+  }
+  if (prev === SCREENS.UNITY_SCENE && name !== SCREENS.UNITY_SCENE) {
+    try { unitySceneScreen.close(); } catch {}
   }
   for (const [key, id] of Object.entries(SCREEN_IDS)) {
     document.getElementById(id).classList.toggle("hidden", key !== name);
@@ -440,6 +446,14 @@ async function goBack() {
 
   if (screen === SCREENS.AUDIO) {
     audioScreen.close();
+    setState({ openFile: null });
+    setScreen(SCREENS.FILES);
+    renderFiles();
+    return;
+  }
+
+  if (screen === SCREENS.UNITY_SCENE) {
+    unitySceneScreen.close();
     setState({ openFile: null });
     setScreen(SCREENS.FILES);
     renderFiles();
@@ -2388,6 +2402,23 @@ async function openImage(file) {
   }
 }
 
+async function openUnityScene(file) {
+  setStatus(`Загрузка ${file.path}...`);
+  try {
+    const content = await getCurrentFileContent(file.path);
+    if (typeof content !== "string") {
+      setStatus("Файл сцены не читается как текст", true);
+      return;
+    }
+    setState({ openFile: { path: file.path } });
+    unitySceneScreen.open(file.path, content);
+    setScreen(SCREENS.UNITY_SCENE);
+    setStatus("");
+  } catch (e) {
+    setStatus("Не удалось открыть сцену: " + e.message, true);
+  }
+}
+
 async function openAudio(file) {
   const { octokit, repo, cloned, mode } = getState();
   if (!octokit || !repo) return;
@@ -2721,6 +2752,9 @@ async function renameFolder(oldPrefix, newPrefix) {
 }
 
 async function openFile(file) {
+  if (isUnityScenePath(file.path)) {
+    return openUnityScene(file);
+  }
   if (file.isBinary) {
     return openBinaryFile(file);
   }

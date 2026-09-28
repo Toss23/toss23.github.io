@@ -1702,6 +1702,180 @@ body {
 }
 
 /* ============================================================
+   Просмотр сцены Unity (read-only)
+   ============================================================ */
+.unity-scene-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+}
+
+.unity-panel {
+  background: #252526;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.unity-panel-title {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #333;
+  background: #2d2d2d;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.unity-hierarchy {
+  max-height: 26%;
+  min-height: 80px;
+  border-bottom: 1px solid #333;
+}
+
+.unity-view {
+  flex: 1;
+  min-height: 160px;
+  position: relative;
+  background: #1a1a1a;
+  overflow: hidden;
+}
+.unity-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+.unity-canvas:active { cursor: grabbing; }
+
+.unity-inspector {
+  max-height: 38%;
+  min-height: 100px;
+  border-top: 1px solid #333;
+}
+.unity-inspector-body {
+  padding: 6px 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #ccc;
+}
+.unity-inspector-body.empty {
+  color: #777;
+  font-style: italic;
+  padding: 16px;
+  text-align: center;
+}
+
+/* Дерево иерархии */
+.unity-tree {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+}
+.unity-tree ul { list-style: none; margin: 0; padding: 0; }
+.unity-tree ul.collapsed { display: none; }
+.unity-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.unity-tree-row:hover { background: #2a2d2e; }
+.unity-tree-node.selected > .unity-tree-row {
+  background: #1e3a4a;
+  color: #fff;
+}
+.unity-tree-node.inactive > .unity-tree-row .unity-tree-name { opacity: 0.5; }
+.unity-tree-arrow {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  color: #888;
+  flex-shrink: 0;
+}
+.unity-tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Инспектор */
+.unity-insp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #333;
+  font-weight: 600;
+  color: #ddd;
+}
+.unity-insp-icon { color: #ffb454; }
+.unity-insp-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.unity-component {
+  margin: 6px 0;
+  border: 1px solid #333;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #222;
+}
+.unity-component-title {
+  padding: 5px 8px;
+  background: #2d2d2d;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: #b5cea8;
+  list-style: none;
+}
+.unity-component-title::-webkit-details-marker { display: none; }
+.unity-component-title::before {
+  content: "▾ ";
+  display: inline-block;
+  width: 12px;
+}
+.unity-component:not([open]) > .unity-component-title::before {
+  content: "▸ ";
+}
+.unity-component-body {
+  padding: 4px 6px;
+  background: #1e1e1e;
+}
+
+.unity-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 1px 0;
+  line-height: 1.5;
+}
+.unity-field-key {
+  color: #9cdcfe;
+  flex-shrink: 0;
+}
+.unity-field-val {
+  color: #ce9178;
+  word-break: break-all;
+}
+.unity-field-val.unity-field-obj { color: #888; }
+.unity-field-sub {
+  flex-basis: 100%;
+  padding-left: 12px;
+  border-left: 1px solid #333;
+  margin: 2px 0 2px 4px;
+}
+
+/* ============================================================
    Просмотр изображений
    ============================================================ */
 .image-viewer {
