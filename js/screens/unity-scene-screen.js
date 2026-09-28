@@ -258,8 +258,8 @@ export function initUnitySceneScreen() {
 
     const token = showBusy("Поиск префабов…");
     try {
-      updateBusyText("Сканирование .prefab.meta…");
-      const prefabMap = await getPrefabMap({
+      updateBusyText("Сканирование .meta файлов…");
+      const map = await getPrefabMap({
         repoKey: context.repoKey,
         headSha: context.headSha,
         files: context.files,
@@ -268,6 +268,8 @@ export function initUnitySceneScreen() {
           if (total > 0) updateBusyText(`Сканирование: ${done} / ${total}`);
         },
       });
+      const prefabMap = map.guidToPath || {};
+      const kindByGuid = map.kindByGuid || {};
 
       if (myGen !== generation) return;
 
@@ -281,16 +283,19 @@ export function initUnitySceneScreen() {
         done++;
         updateBusyText(`Чтение префабов: ${done} / ${uniqueGuids.length}`);
         const prefabPath = prefabMap[guid];
+        const kind = kindByGuid[guid] || "prefab";
         if (!prefabPath) {
           console.warn("[unity-scene] guid не найден в карте:", guid);
           continue;
         }
-        console.log("[unity-scene] резолв:", guid, "→", prefabPath);
+        console.log("[unity-scene] резолв:", guid, "kind:", kind, "→", prefabPath);
         try {
           const info = await loadPrefabBoundingBox({
             prefabPath,
+            kind,
             getContent: context.getContent,
             prefabMap,
+            kindByGuid,
             selfGuid: guid,
             visited: new Set(),
             depth: 0,

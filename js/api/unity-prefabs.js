@@ -1,23 +1,52 @@
-// Резолвер префабов Unity: по sourceGuid из PrefabInstance находит
-// .prefab в репозитории, читает его и возвращает размеры bounding box.
+// Резолвер префабов и спрайт-ассетов Unity.
+// По guid находит ассет в репозитории:
+//   - .prefab      → рекурсивный обход с применением override'ов
+//   - .psb/.psd    → размеры из заголовка Photoshop-файла
+//   - .png/.jpg/.tga → размеры из заголовка изображения
 //
-// Особенности:
-// - Если у префаба собственных SpriteRenderer нет, рекурсивно идём
-//   во вложенные PrefabInstance и объединяем их bbox'ы.
-// - Override'ы (m_Modifications) применяются к вложенному префабу перед
-//   расчётом bbox: иначе позиции внутренних объектов берутся из
-//   исходного файла, а не из переопределённых.
-// - Карта guid → path строится один раз и кэшируется в IndexedDB
-//   (ключ = репозиторий + ветка + headSha).
+// Пиксельные размеры делятся на PPU=100 (стандарт Unity), получаются
+// локальные единицы. Карта guid → { path, kind } кэшируется в IndexedDB,
+// ключ включает версию, чтобы старый кэш не мешал.
 
 import { get as idbGet, set as idbSet } from "https://esm.sh/idb-keyval@6";
 import { parseUnityYaml, buildSceneModel } from "./unity-yaml.js";
+import { readPsdInfo } from "@core/psd-preview.js";
 
 const CACHE_PREFIX = "unity_prefabs:";
+const CACHE_VERSION = "v2";
 const MAX_DEPTH = 6;
+const DEFAULT_PPU = 100;
+
+// Какие .meta сканируем. Только те, что могут быть целью ссылок из сцены.
+const KNOWN_META_EXT = [
+  "prefab.meta",
+  "psb.meta",
+  "psd.meta",
+  "png.meta",
+  "jpg.meta",
+  "jpeg.meta",
+  "tga.meta",
+  "gif.meta",
+  "bmp.meta",
+  "asset.meta",
+];
 
 function makeCacheKey(repoKey, headSha) {
-  return CACHE_PREFIX + (repoKey || "repo") + "@" + (headSha || "unknown");
+  return CACHE_PREFIX + CACHE_VERSION + ":" + (repoKey || "repo") + "@" + (headSha || "unknown");
+}
+
+function detectKind(path) {
+  const name = path.toLowerCase();
+  if (name.endsWith(".prefab")) return "prefab";
+  if (name.endsWith(".psb")) return "psb";
+  if (name.endsWith(".psd")) return "psd";
+  if (name.endsWith(".png")) return "png";
+  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "jpg";
+  if (name.endsWith(".tga")) return "tga";
+  if (name.endsWith(".gif")) return "gif";
+  if (name.endsWith(".bmp")) return "bmp";
+  if (name.endsWith(".asset")) return "asset";
+  return "other";
 }
 
 export async function getPrefabMap({ repoKey, headSha, files, getContent, onProgress }) {
@@ -27,18 +56,21 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
     const cached = await idbGet(key);
     if (cached && cached.guidToPath && typeof cached.guidToPath === "object") {
       console.log("[prefabs] карта из кэша, записей:", Object.keys(cached.guidToPath).length);
-      return cached.guidToPath;
+      return cached;
     }
   } catch (e) {
     console.warn("prefab map cache read:", e);
   }
 
-  const metaFiles = (files || []).filter(
-    (f) => f && typeof f.path === "string" && f.path.endsWith(".prefab.meta")
-  );
-  console.log("[prefabs] найдено .prefab.meta файлов:", metaFiles.length);
+  const metaFiles = (files || []).filter((f) => {
+    if (!f || typeof f.path !== "string") return false;
+    const lower = f.path.toLowerCase();
+    return KNOWN_META_EXT.some((ext) => lower.endsWith("." + ext));
+  });
+  console.log("[prefabs] найдено .meta для сканирования:", metaFiles.length);
 
   const guidToPath = {};
+  const kindByGuid = {};
   const total = metaFiles.length;
   let done = 0;
   let skipped = 0;
@@ -53,23 +85,93 @@ export async function getPrefabMap({ repoKey, headSha, files, getContent, onProg
       if (typeof text !== "string") { skipped++; continue; }
       const m = text.match(/^guid:\s*([a-f0-9]+)/m);
       if (!m) { skipped++; continue; }
-      const prefabPath = mf.path.replace(/\.meta$/, "");
-      guidToPath[m[1]] = prefabPath;
+      const assetPath = mf.path.replace(/\.meta$/, "");
+      guidToPath[m[1]] = assetPath;
+      kindByGuid[m[1]] = detectKind(assetPath);
     } catch { skipped++; }
   }
 
   console.log("[prefabs] карта построена, записей:", Object.keys(guidToPath).length, "пропущено:", skipped);
 
+  const result = { guidToPath, kindByGuid, builtAt: Date.now() };
   try {
-    await idbSet(key, { guidToPath, builtAt: Date.now() });
+    await idbSet(key, result);
   } catch (e) {
     console.warn("prefab map cache write:", e);
   }
-
-  return guidToPath;
+  return result;
 }
 
-// Применяет одну строку override: m_LocalPosition.x → data.m_LocalPosition.x = value.
+// --- Чтение размеров из заголовков изображений ---
+
+function readPngSize(bytes) {
+  // PNG: 8 байт сигнатуры, затем IHDR. Ширина — 4 байта по смещению 16,
+  // высота — 4 байта по смещению 20, big-endian.
+  if (bytes.length < 24) return null;
+  if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4E || bytes[3] !== 0x47) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return {
+    width: view.getUint32(16, false),
+    height: view.getUint32(20, false),
+  };
+}
+
+function readJpegSize(bytes) {
+  // JPEG: маркеры. Ищем SOF0/1/2/3 (0xC0-0xC3) и читаем размеры.
+  if (bytes.length < 4) return null;
+  if (bytes[0] !== 0xFF || bytes[1] !== 0xD8) return null;
+  let i = 2;
+  while (i < bytes.length - 8) {
+    if (bytes[i] !== 0xFF) { i++; continue; }
+    const marker = bytes[i + 1];
+    if (marker >= 0xC0 && marker <= 0xC3) {
+      const h = (bytes[i + 5] << 8) | bytes[i + 6];
+      const w = (bytes[i + 7] << 8) | bytes[i + 8];
+      return { width: w, height: h };
+    }
+    const len = (bytes[i + 2] << 8) | bytes[i + 3];
+    i += 2 + len;
+  }
+  return null;
+}
+
+async function readAssetSize(kind, getContent, assetPath) {
+  try {
+    const content = await getContent(assetPath);
+    if (content === null || content === undefined) return null;
+
+    // Локальный режим может вернуть байты (Uint8Array) или base64-строку.
+    let bytes = null;
+    if (content instanceof Uint8Array) bytes = content;
+    else if (typeof content === "object" && content.binary) return null;
+    else if (typeof content === "string" && /^[A-Za-z0-9+/=]+$/.test(content.slice(0, 64))) {
+      try {
+        const bin = atob(content);
+        bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      } catch { return null; }
+    } else {
+      return null;
+    }
+
+    if (kind === "psb" || kind === "psd") {
+      const info = readPsdInfo(bytes);
+      if (info && info.width && info.height) {
+        return { width: info.width, height: info.height };
+      }
+      return null;
+    }
+    if (kind === "png") return readPngSize(bytes);
+    if (kind === "jpg") return readJpegSize(bytes);
+    return null;
+  } catch (e) {
+    console.warn("[prefabs] не удалось прочитать размеры:", assetPath, e);
+    return null;
+  }
+}
+
+// --- Override'ы ---
+
 function setPropertyPath(obj, path, value) {
   const parts = String(path).split(".");
   let cur = obj;
@@ -81,7 +183,6 @@ function setPropertyPath(obj, path, value) {
   cur[parts[parts.length - 1]] = value;
 }
 
-// overrides: Map<fileID-в-целевом-префабе, Array<[propertyPath, value]>>
 function applyOverrides(docs, overrides) {
   if (!overrides || !overrides.size) return;
   for (const [fileId, entries] of overrides) {
@@ -97,21 +198,23 @@ function applyOverrides(docs, overrides) {
   }
 }
 
+// --- Основная функция ---
+
 /**
- * Читает .prefab и возвращает bounding box по всем SpriteRenderer,
- * включая вложенные префабы, с применением override'ов.
- *
- * Возвращает:
+ * Возвращает bounding box ассета в локальных единицах.
  *   { hasSprite: false }
  *   { hasSprite: true, minX, minY, maxX, maxY, color, spriteCount }
  */
 export async function loadPrefabBoundingBox({
   prefabPath,
+  kind,
   getContent,
   prefabMap,
+  kindByGuid,
   selfGuid,
   visited,
   depth,
+  overrides,
 }) {
   if (typeof depth !== "number") depth = 0;
   if (depth > MAX_DEPTH) return null;
@@ -119,6 +222,24 @@ export async function loadPrefabBoundingBox({
   if (selfGuid && visited.has(selfGuid)) return null;
   if (selfGuid) visited.add(selfGuid);
 
+  // --- Ассеты-картинки: размер из заголовка ---
+  if (kind && kind !== "prefab" && kind !== "asset") {
+    const size = await readAssetSize(kind, getContent, prefabPath);
+    if (!size || !size.width || !size.height) return { hasSprite: false };
+    const w = size.width / DEFAULT_PPU;
+    const h = size.height / DEFAULT_PPU;
+    return {
+      hasSprite: true,
+      minX: -w / 2,
+      minY: -h / 2,
+      maxX: w / 2,
+      maxY: h / 2,
+      color: { r: 1, g: 1, b: 1, a: 1 },
+      spriteCount: 1,
+    };
+  }
+
+  // --- Префаб: рекурсивный разбор ---
   const text = await getContent(prefabPath);
   if (typeof text !== "string") {
     console.warn("[prefabs] пустой файл:", prefabPath);
@@ -128,6 +249,7 @@ export async function loadPrefabBoundingBox({
   let docs, model;
   try {
     docs = parseUnityYaml(text);
+    if (overrides && overrides.size) applyOverrides(docs, overrides);
     model = buildSceneModel(docs);
   } catch (e) {
     console.warn("prefab parse:", prefabPath, e);
@@ -149,15 +271,13 @@ export async function loadPrefabBoundingBox({
     if (!firstColor && color) firstColor = color;
   }
 
-  // --- 1. Собственные спрайты
   for (const g of model.gameObjects) {
     if (!g.hasSprite || g.sizeX === null || g.sizeY === null) continue;
     absorb(g.worldX, g.worldY, g.sizeX / 2, g.sizeY / 2, g.spriteColor);
     spriteCount++;
   }
 
-  // --- 2. Вложенные префабы с применением overrides
-  if (prefabMap) {
+  if (prefabMap && kindByGuid) {
     for (const g of model.gameObjects) {
       if (!g.isPrefabInstance) continue;
       const nestedGuid = g.sourceGuid;
@@ -165,25 +285,23 @@ export async function loadPrefabBoundingBox({
       if (visited.has(nestedGuid)) continue;
       const nestedPath = prefabMap[nestedGuid];
       if (!nestedPath) {
-        console.warn("[prefabs] вложенный guid не найден в карте:", nestedGuid, "в файле", prefabPath);
+        console.warn("[prefabs] guid не найден в карте:", nestedGuid, "в файле", prefabPath);
         continue;
       }
+      const nestedKind = kindByGuid[nestedGuid] || detectKind(nestedPath);
 
-      // Собираем override'ы, которые прицелены именно во вложенный префаб.
       const doc = model.byFileId.get(g.fileID);
       const pi = doc && doc.data && doc.data.PrefabInstance;
       const mods = pi && pi.m_Modification && pi.m_Modification.m_Modifications;
-      const overrides = new Map();
+      const nestedOverrides = new Map();
       if (Array.isArray(mods)) {
         for (const m of mods) {
           const tgt = m && m.target;
           if (!tgt) continue;
-          // Применяем только override'ы, чей target.guid совпадает
-          // с вложенным префабом (иначе они относятся к другим файлам).
           if (tgt.guid !== nestedGuid) continue;
           const fid = String(tgt.fileID);
-          if (!overrides.has(fid)) overrides.set(fid, []);
-          overrides.get(fid).push([m.propertyPath, m.value]);
+          if (!nestedOverrides.has(fid)) nestedOverrides.set(fid, []);
+          nestedOverrides.get(fid).push([m.propertyPath, m.value]);
         }
       }
 
@@ -191,19 +309,20 @@ export async function loadPrefabBoundingBox({
       try {
         nested = await loadPrefabBoundingBox({
           prefabPath: nestedPath,
+          kind: nestedKind,
           getContent,
           prefabMap,
+          kindByGuid,
           selfGuid: nestedGuid,
           visited,
           depth: depth + 1,
-          overrides,
+          overrides: nestedOverrides,
         });
       } catch (e) {
         console.warn("nested prefab:", nestedPath, e);
       }
       if (!nested || !nested.hasSprite) continue;
 
-      // Применяем локальный сдвиг и масштаб инстанса.
       const sx = g.localScale.x || 1;
       const sy = g.localScale.y || 1;
       const nxMinX = g.localPos.x + nested.minX * sx;
