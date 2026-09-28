@@ -51,7 +51,47 @@ function showErrorDetails(text) {
     wrap.className = "boot-error-details";
 
     const summary = document.createElement("summary");
-    summary.textContent = "Показать текст ошибки";
+
+    const label = document.createElement("span");
+    label.className = "boot-error-label";
+    label.textContent = "Показать текст ошибки";
+    summary.appendChild(label);
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "boot-error-copy";
+    copyBtn.title = "Скопировать текст ошибки";
+    copyBtn.textContent = "📋";
+    copyBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const pre = wrap.querySelector("#boot-error-text");
+      const value = pre ? pre.textContent : "";
+      const done = () => {
+        copyBtn.textContent = "✓";
+        setTimeout(() => { copyBtn.textContent = "📋"; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(value).then(done).catch(() => {
+          const ta = document.createElement("textarea");
+          ta.value = value;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand("copy"); } catch {}
+          document.body.removeChild(ta);
+          done();
+        });
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = value;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); } catch {}
+        document.body.removeChild(ta);
+        done();
+      }
+    });
+    summary.appendChild(copyBtn);
     wrap.appendChild(summary);
 
     const pre = document.createElement("pre");

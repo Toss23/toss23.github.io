@@ -965,7 +965,10 @@ body {
   overflow: hidden;
 }
 .boot-error-details summary {
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 8px 12px;
   cursor: pointer;
   user-select: none;
   font-weight: 600;
@@ -973,13 +976,34 @@ body {
 }
 .boot-error-details summary::-webkit-details-marker { display: none; }
 .boot-error-details summary::before {
-  content: "▸ ";
+  content: "▸";
   display: inline-block;
+  flex-shrink: 0;
+  width: 12px;
   transition: transform 0.15s ease;
 }
 .boot-error-details[open] summary::before {
-  content: "▾ ";
+  content: "▾";
 }
+.boot-error-label {
+  flex: 1;
+  padding-left: 4px;
+}
+.boot-error-copy {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid #4a2a2a;
+  color: #f0b0a0;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  min-height: 24px;
+  min-width: 32px;
+  font-family: inherit;
+  line-height: 1;
+}
+.boot-error-copy:hover { background: #3a1e1e; }
 .boot-error-details[open] summary {
   border-bottom: 1px solid #4a2a2a;
 }
