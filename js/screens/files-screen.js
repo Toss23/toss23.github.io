@@ -35,6 +35,8 @@ const FILE_ICONS = {
   bmp: "\uD83D\uDDBC\uFE0F",
   ico: "\uD83D\uDDBC\uFE0F",
   svg: "\uD83D\uDDBC\uFE0F",
+  psd: "\uD83D\uDDBC\uFE0F",
+  psb: "\uD83D\uDDBC\uFE0F",
   pdf: "\uD83D\uDCD5",
   zip: "\uD83D\uDDDC\uFE0F",
   tar: "\uD83D\uDDDC\uFE0F",
