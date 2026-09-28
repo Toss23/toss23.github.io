@@ -690,6 +690,7 @@ async function tryRestoreSession() {
 
 async function login(token) {
   if (!token) return;
+  const busyToken = showBusy("Проверка токена…");
   setStatus("Проверка токена...");
   try {
     const octokit = createClient(token);
@@ -698,14 +699,17 @@ async function login(token) {
     setState({ octokit, user });
     header.setUser(user.login);
 
+    updateBusyText("Подготовка хранилища…");
     const persistent = await storage.requestPersistent();
     console.log("Persistent storage:", persistent);
 
     // Загружаем список репозиториев (нужен в state.repos).
+    updateBusyText("Загрузка репозиториев…");
     await loadAllRepos();
 
     // Пытаемся восстановить последнюю открытую сессию.
     // Если получилось — экран уже переключён на файлы.
+    updateBusyText("Восстановление сессии…");
     const restored = await tryRestoreSession();
     if (restored) return;
 
@@ -716,6 +720,8 @@ async function login(token) {
     clearToken();
     header.setLoggedOut();
     setScreen(SCREENS.AUTH);
+  } finally {
+    hideBusy(busyToken);
   }
 }
 
@@ -787,6 +793,7 @@ async function handleRepoSelect(repo) {
   }
 
   const { octokit } = getState();
+  const busyToken = showBusy("Проверка репозитория…");
 
   let isEmpty = false;
   try {
@@ -797,6 +804,8 @@ async function handleRepoSelect(repo) {
     if (isEmptyRepoError(e)) isEmpty = true;
     else console.warn("Проверка репо:", e.message);
   }
+
+  hideBusy(busyToken);
 
   if (isEmpty) {
     const ok = await dialogs.confirm({
@@ -867,6 +876,8 @@ async function handleRepoSelect(repo) {
 async function openRepoRemote(repo) {
   stopLocalWatch();
   if (!(await confirmDiscard())) return;
+  const busyToken = showBusy("Открытие репозитория…");
+  try {
   clearTabs();
   renderTabs();
   const { octokit } = getState();
@@ -936,6 +947,9 @@ async function openRepoRemote(repo) {
   setScreen(SCREENS.FILES);
   renderFiles();
   saveLastSession();
+  } finally {
+    hideBusy(busyToken);
+  }
 }
 
 async function selectBranch(branch) {
@@ -985,6 +999,8 @@ async function loadTree() {
 
 async function openRepoLocal(repo) {
   if (!(await confirmDiscard())) return;
+  const busyToken = showBusy("Открытие локальной копии…");
+  try {
   const key = storage.makeRepoKey(repo.owner.login, repo.name, repo.default_branch);
   const meta = await storage.loadRepoMeta(key);
   if (!meta) { setStatus("Локальная копия не найдена", true); return; }
@@ -1006,6 +1022,9 @@ async function openRepoLocal(repo) {
     return;
   }
   await enterLocalMode(repo, meta);
+  } finally {
+    hideBusy(busyToken);
+  }
 }
 
 async function repairLegacyClone(meta, filesIndex) {
