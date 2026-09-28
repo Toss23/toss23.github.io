@@ -216,6 +216,10 @@ export function initUnitySceneScreen() {
     title.className = "unity-insp-title";
     title.textContent = go.name;
     head.appendChild(title);
+    const badge = document.createElement("span");
+    badge.className = "unity-insp-badge" + (go.active ? "" : " inactive");
+    badge.textContent = go.active ? "active" : "inactive";
+    head.appendChild(badge);
     inspectorEl.appendChild(head);
 
     const order = [];
@@ -229,6 +233,22 @@ export function initUnitySceneScreen() {
       if (!doc || !doc.data) continue;
       inspectorEl.appendChild(renderComponent(doc));
     }
+  }
+
+  // Служебные поля Unity, которые прячем из GUI — они бесполезны для чтения.
+  const SKIP_FIELDS = new Set([
+    "m_ObjectHideFlags",
+    "m_CorrespondingSourceObject",
+    "m_PrefabInstance",
+    "m_PrefabAsset",
+  ]);
+
+  // m_LocalPosition → «Local Position», m_IsActive → «Is Active».
+  function prettyName(name) {
+    let s = String(name);
+    if (s.startsWith("m_")) s = s.slice(2);
+    s = s.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+    return s;
   }
 
   function renderComponent(doc) {
@@ -246,91 +266,191 @@ export function initUnitySceneScreen() {
     const keys = Object.keys(doc.data);
     const inner = keys.length ? doc.data[keys[0]] : doc.data;
     if (inner && typeof inner === "object") {
-      renderFields(inner, body, 0, 6);
+      renderFieldsGui(inner, body, 0);
     } else {
-      body.textContent = String(inner);
+      const row = document.createElement("div");
+      row.className = "unity-field";
+      row.textContent = String(inner);
+      body.appendChild(row);
     }
     wrap.appendChild(body);
     return wrap;
   }
 
-  function renderFields(obj, parent, depth, maxDepth) {
-    if (depth > maxDepth) {
-      const el = document.createElement("div");
-      el.className = "unity-field-row";
-      el.textContent = "…";
-      parent.appendChild(el);
-      return;
+  function renderFieldsGui(obj, parent, depth) {
+    if (depth > 6) return;
+    for (const key of Object.keys(obj)) {
+      if (SKIP_FIELDS.has(key)) continue;
+      parent.appendChild(renderField(key, obj[key], depth));
     }
-    if (Array.isArray(obj)) {
-      for (let i = 0; i < obj.length; i++) {
-        const row = document.createElement("div");
-        row.className = "unity-field-row";
-        row.style.paddingLeft = (depth * 12) + "px";
-        const k = document.createElement("span");
-        k.className = "unity-field-key";
-        k.textContent = "[" + i + "]";
-        row.appendChild(k);
-        const v = obj[i];
-        if (v !== null && typeof v === "object") {
-          const vEl = document.createElement("span");
-          vEl.className = "unity-field-val unity-field-obj";
-          vEl.textContent = formatRef(v);
-          row.appendChild(vEl);
-          const sub = document.createElement("div");
-          sub.className = "unity-field-sub";
-          renderFields(v, sub, depth + 1, maxDepth);
-          row.appendChild(sub);
-        } else {
-          const vEl = document.createElement("span");
-          vEl.className = "unity-field-val";
-          vEl.textContent = formatScalar(v);
-          row.appendChild(vEl);
-        }
-        parent.appendChild(row);
-      }
-      return;
-    }
-    for (const k of Object.keys(obj)) {
-      if (k === "m_ObjectHideFlags") continue;
-      const val = obj[k];
-      const row = document.createElement("div");
-      row.className = "unity-field-row";
-      row.style.paddingLeft = (depth * 12) + "px";
-      const kEl = document.createElement("span");
-      kEl.className = "unity-field-key";
-      kEl.textContent = k;
-      row.appendChild(kEl);
-      if (val !== null && typeof val === "object") {
-        const vEl = document.createElement("span");
-        vEl.className = "unity-field-val unity-field-obj";
-        vEl.textContent = formatRef(val);
-        row.appendChild(vEl);
-        const sub = document.createElement("div");
-        sub.className = "unity-field-sub";
-        renderFields(val, sub, depth + 1, maxDepth);
-        row.appendChild(sub);
+  }
+
+  function renderField(key, val, depth) {
+    const row = document.createElement("div");
+    row.className = "unity-field";
+    row.style.paddingLeft = (depth * 10) + "px";
+
+    const label = document.createElement("div");
+    label.className = "unity-field-label";
+    label.textContent = prettyName(key);
+    label.title = key;
+    row.appendChild(label);
+
+    const control = document.createElement("div");
+    control.className = "unity-field-control";
+
+    if (val === null || val === undefined) {
+      const v = document.createElement("span");
+      v.className = "unity-field-scalar null";
+      v.textContent = "null";
+      control.appendChild(v);
+    } else if (Array.isArray(val)) {
+      renderArrayControl(val, control);
+    } else if (typeof val === "object") {
+      renderObjectControl(val, control);
+    } else {
+      const v = document.createElement("span");
+      v.className = "unity-field-scalar";
+      if (typeof val === "boolean") {
+        v.textContent = val ? "true" : "false";
+        v.classList.add(val ? "true" : "false");
       } else {
-        const vEl = document.createElement("span");
-        vEl.className = "unity-field-val";
-        vEl.textContent = formatScalar(val);
-        row.appendChild(vEl);
+        v.textContent = String(val);
       }
-      parent.appendChild(row);
+      control.appendChild(v);
     }
+
+    row.appendChild(control);
+    return row;
   }
 
-  function formatRef(obj) {
-    if (obj && obj.fileID !== undefined) return "{fileID: " + obj.fileID + "}";
-    if (Array.isArray(obj)) return "[Array " + obj.length + "]";
-    return "{...}";
+  function renderObjectControl(obj, control) {
+    const keys = Object.keys(obj);
+
+    // Ссылка {fileID: N} — кнопка, кликабельная, если ссылается на GameObject.
+    if (keys.length === 1 && keys[0] === "fileID") {
+      const fid = String(obj.fileID);
+      if (fid === "0") {
+        const v = document.createElement("span");
+        v.className = "unity-field-ref null";
+        v.textContent = "None";
+        control.appendChild(v);
+        return;
+      }
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "unity-field-ref";
+      btn.textContent = "fileID: " + fid;
+      if (model.goByFileId.has(fid)) {
+        btn.classList.add("clickable");
+        btn.title = model.goByFileId.get(fid).name;
+        btn.addEventListener("click", () => selectNode(fid));
+      }
+      control.appendChild(btn);
+      return;
+    }
+
+    // Векторы: 2/3/4 компонента x/y/z/w.
+    const vecKeys = ["x", "y", "z", "w"];
+    const isVector = keys.length > 0 && keys.every((k) => vecKeys.includes(k))
+      && keys.includes("x") && keys.includes("y");
+    if (isVector) {
+      control.appendChild(makeVectorRow(obj, vecKeys));
+      return;
+    }
+
+    // Цвет: r, g, b, a + свотч.
+    if (keys.length === 4 && ["r", "g", "b", "a"].every((k) => k in obj)) {
+      const c = document.createElement("div");
+      c.className = "unity-vec unity-color";
+      const sw = document.createElement("span");
+      sw.className = "unity-color-swatch";
+      sw.style.background = "rgba("
+        + Math.round(num(obj.r) * 255) + ","
+        + Math.round(num(obj.g) * 255) + ","
+        + Math.round(num(obj.b) * 255) + ","
+        + num(obj.a) + ")";
+      c.appendChild(sw);
+      for (const k of ["r", "g", "b", "a"]) c.appendChild(makeVecCell(k, obj[k]));
+      control.appendChild(c);
+      return;
+    }
+
+    // Прочее — раскрываемый подраздел со вложенными полями.
+    const details = document.createElement("details");
+    details.className = "unity-subfields";
+    const sum = document.createElement("summary");
+    sum.className = "unity-subfields-summary";
+    sum.textContent = prettyName(Object.keys(obj)[0] || "object") + " (" + keys.length + ")";
+    details.appendChild(sum);
+    const body = document.createElement("div");
+    body.className = "unity-subfields-body";
+    renderFieldsGui(obj, body, 0);
+    details.appendChild(body);
+    control.appendChild(details);
   }
 
-  function formatScalar(v) {
-    if (v === null) return "null";
-    if (v === undefined) return "";
-    if (typeof v === "object") return JSON.stringify(v);
-    return String(v);
+  function makeVectorRow(obj, order) {
+    const vec = document.createElement("div");
+    vec.className = "unity-vec";
+    for (const k of order) {
+      if (!(k in obj)) continue;
+      vec.appendChild(makeVecCell(k, obj[k]));
+    }
+    return vec;
+  }
+
+  function makeVecCell(key, value) {
+    const f = document.createElement("div");
+    f.className = "unity-vec-field";
+    const kEl = document.createElement("span");
+    kEl.className = "unity-vec-key";
+    kEl.textContent = String(key).toUpperCase();
+    f.appendChild(kEl);
+    const vEl = document.createElement("span");
+    vEl.className = "unity-vec-val";
+    vEl.textContent = fmtNum(value);
+    f.appendChild(vEl);
+    return f;
+  }
+
+  function renderArrayControl(arr, control) {
+    const details = document.createElement("details");
+    details.className = "unity-array";
+    const sum = document.createElement("summary");
+    sum.className = "unity-array-summary";
+    sum.textContent = "Элементов: " + arr.length;
+    details.appendChild(sum);
+    if (arr.length === 0) {
+      control.appendChild(details);
+      return;
+    }
+    const body = document.createElement("div");
+    body.className = "unity-array-body";
+    const limit = Math.min(arr.length, 50);
+    for (let i = 0; i < limit; i++) {
+      body.appendChild(renderField("[" + i + "]", arr[i], 0));
+    }
+    if (arr.length > limit) {
+      const more = document.createElement("div");
+      more.className = "unity-array-more";
+      more.textContent = "…ещё " + (arr.length - limit);
+      body.appendChild(more);
+    }
+    details.appendChild(body);
+    control.appendChild(details);
+  }
+
+  function num(v) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function fmtNum(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return String(v);
+    if (Number.isInteger(n)) return String(n);
+    return n.toFixed(4).replace(/\.?0+$/, "");
   }
 
   /* ---------- Управление видом ---------- */
@@ -432,6 +552,18 @@ export function initUnitySceneScreen() {
     }, { passive: true });
 
     window.addEventListener("resize", resizeCanvas);
+
+    // Пересобираем канвас и при изменении размеров контейнера:
+    // инспектор может разворачиваться/сворачиваться, а сцена должна
+    // тянуться за ним без артефактов.
+    if (window.ResizeObserver && canvas.parentElement) {
+      let raf = 0;
+      const ro = new ResizeObserver(() => {
+        if (raf) return;
+        raf = requestAnimationFrame(() => { raf = 0; resizeCanvas(); });
+      });
+      ro.observe(canvas.parentElement);
+    }
   }
 
   return {
