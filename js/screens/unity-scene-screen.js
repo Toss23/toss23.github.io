@@ -1,64 +1,158 @@
 import { $ } from "@core/dom.js";
 import { parseUnityYaml, buildSceneModel, classDisplayName } from "@api/unity-yaml.js";
 
-// Read-only просмотр сцены Unity: иерархия сверху, 2D-вид по XZ по центру,
-// инспектор снизу. Редактирование не поддерживается.
+// Read-only просмотр сцены Unity: иерархия сверху (сворачиваемая, 5 строк
+// со скроллом), 2D-вид XY по центру, инспектор снизу (закрыт по умолчанию,
+// открывается при выборе объекта). На сцене рисуются только SpriteRenderer
+// (заливка цветом) и Canvas (рамка). Кнопки управления панелями создаются
+// из JS — чтобы работать независимо от состояния index.html.
 export function initUnitySceneScreen() {
   const pathEl = $("unity-scene-path");
   const hierEl = $("unity-hierarchy-list");
-  const canvas = $("unity-canvas");
+  const canvasEl = $("unity-canvas");
   const inspectorEl = $("unity-inspector-body");
-  const hierarchyPanel = $("unity-hierarchy-panel");
-  const hierarchyToggle = $("unity-hierarchy-toggle");
-  const inspectorPanel = $("unity-inspector-panel");
-  const inspectorCloseBtn = $("unity-inspector-close");
 
-  const ctx = canvas ? canvas.getContext("2d") : null;
+  // Панели ищем и по id (если HTML уже обновлён), и по классу (старый HTML).
+  const hierarchyPanel = $("unity-hierarchy-panel") || document.querySelector(".unity-hierarchy");
+  const inspectorPanel = $("unity-inspector-panel") || document.querySelector(".unity-inspector");
+
+  const ctx = canvasEl ? canvasEl.getContext("2d") : null;
 
   let model = null;
   let selectedFileID = null;
-  let view = { cx: 0, cz: 0, scale: 40 };
+  let view = { cx: 0, cy: 0, scale: 40 };
+  let hierarchyToggleBtn = null;
+  let inspectorCloseButton = null;
+
+  /* ---------- Стили и кнопки панелей ---------- */
+
+  function injectStyles() {
+    if (document.getElementById("unity-scene-styles")) return;
+    const style = document.createElement("style");
+    style.id = "unity-scene-styles";
+    style.textContent = [
+      ".unity-panel-title{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:2px 6px 2px 10px;min-height:24px;}",
+      ".unity-panel-title > span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+      ".unity-panel-toggle{flex-shrink:0;background:transparent;border:none;color:#aaa;font-family:inherit;font-size:12px;line-height:1;cursor:pointer;min-width:24px;min-height:22px;padding:2px 6px;border-radius:3px;}",
+      ".unity-panel-toggle:hover{background:#3c3c3c;color:#fff;}",
+      ".unity-panel-toggle:active{background:#4a4a4a;}",
+      ".unity-hierarchy{flex:0 0 140px !important;min-height:24px !important;overflow:hidden;display:flex;flex-direction:column;}",
+      ".unity-hierarchy.collapsed{flex:0 0 auto !important;}",
+      ".unity-hierarchy.collapsed .unity-tree{display:none;}",
+      ".unity-hierarchy .unity-tree{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;}",
+      ".unity-inspector.closed{display:none !important;}",
+    ].join("");
+    document.head.appendChild(style);
+  }
+
+  function ensureTitleSpan(titleEl) {
+    if (!titleEl) return null;
+    let span = titleEl.querySelector("span");
+    if (!span) {
+      const text = titleEl.textContent.trim();
+      titleEl.textContent = "";
+      span = document.createElement("span");
+      span.textContent = text;
+      titleEl.appendChild(span);
+    }
+    return span;
+  }
+
+  function ensureHierarchyToggle() {
+    if (!hierarchyPanel) return;
+    const title = hierarchyPanel.querySelector(".unity-panel-title");
+    if (!title) return;
+    if (title.querySelector(".unity-panel-toggle")) return;
+    ensureTitleSpan(title);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "unity-panel-toggle";
+    btn.title = "Свернуть";
+    btn.textContent = "▾";
+    btn.addEventListener("click", () => {
+      const collapsed = hierarchyPanel.classList.toggle("collapsed");
+      btn.textContent = collapsed ? "▸" : "▾";
+      btn.title = collapsed ? "Развернуть" : "Свернуть";
+    });
+    title.appendChild(btn);
+    hierarchyToggleBtn = btn;
+  }
+
+  function ensureInspectorClose() {
+    if (!inspectorPanel) return;
+    const title = inspectorPanel.querySelector(".unity-panel-title");
+    if (!title) return;
+    if (title.querySelector(".unity-panel-toggle")) return;
+    ensureTitleSpan(title);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "unity-panel-toggle";
+    btn.title = "Закрыть";
+    btn.textContent = "✕";
+    btn.addEventListener("click", () => {
+      inspectorPanel.classList.add("closed");
+    });
+    title.appendChild(btn);
+    inspectorCloseButton = btn;
+  }
 
   /* ---------- Canvas ---------- */
 
   function resizeCanvas() {
-    if (!canvas || !ctx) return;
-    const rect = canvas.getBoundingClientRect();
+    if (!canvasEl || !ctx) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const w = Math.max(1, Math.floor(rect.width));
+    const h = Math.max(1, Math.floor(rect.height));
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    const needW = Math.floor(w * dpr);
+    const needH = Math.floor(h * dpr);
+    if (canvasEl.width !== needW || canvasEl.height !== needH) {
+      canvasEl.width = needW;
+      canvasEl.height = needH;
+    }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     draw();
   }
 
-  function autoFit() {
-    if (!canvas) return;
-    if (!model || !model.gameObjects.length) {
-      view = { cx: 0, cz: 0, scale: 40 };
-      return;
-    }
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const g of model.gameObjects) {
-      if (g.worldX < minX) minX = g.worldX;
-      if (g.worldX > maxX) maxX = g.worldX;
-      if (g.worldZ < minZ) minZ = g.worldZ;
-      if (g.worldZ > maxZ) maxZ = g.worldZ;
-    }
-    const w = Math.max(1, maxX - minX);
-    const h = Math.max(1, maxZ - minZ);
-    const rect = canvas.getBoundingClientRect();
-    const pad = 40;
-    const sx = Math.max(1, rect.width - pad * 2) / w;
-    const sz = Math.max(1, rect.height - pad * 2) / h;
-    const s = Math.max(4, Math.min(200, Math.min(sx, sz)));
-    view = { cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, scale: s };
+  function isDrawable(g) {
+    return g.sizeX !== null && g.sizeY !== null && g.sizeX > 0.001 && g.sizeY > 0.001;
   }
 
-  function toScreen(x, z) {
-    const rect = canvas.getBoundingClientRect();
+  function autoFit() {
+    if (!canvasEl) return;
+    const visible = model ? model.gameObjects.filter(isDrawable) : [];
+    if (!visible.length) {
+      view = { cx: 0, cy: 0, scale: 40 };
+      return;
+    }
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const g of visible) {
+      const hw = (g.sizeX || 0) / 2;
+      const hh = (g.sizeY || 0) / 2;
+      if (g.worldX - hw < minX) minX = g.worldX - hw;
+      if (g.worldX + hw > maxX) maxX = g.worldX + hw;
+      if (g.worldY - hh < minY) minY = g.worldY - hh;
+      if (g.worldY + hh > maxY) maxY = g.worldY + hh;
+    }
+    if (!Number.isFinite(minX)) {
+      view = { cx: 0, cy: 0, scale: 40 };
+      return;
+    }
+    const w = Math.max(0.5, maxX - minX);
+    const h = Math.max(0.5, maxY - minY);
+    const rect = canvasEl.getBoundingClientRect();
+    const pad = 40;
+    const sx = Math.max(1, rect.width - pad * 2) / w;
+    const sy = Math.max(1, rect.height - pad * 2) / h;
+    const s = Math.max(2, Math.min(400, Math.min(sx, sy)));
+    view = { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, scale: s };
+  }
+
+  function toScreen(x, y) {
+    const rect = canvasEl.getBoundingClientRect();
     return {
       x: rect.width / 2 + (x - view.cx) * view.scale,
-      y: rect.height / 2 - (z - view.cz) * view.scale,
+      y: rect.height / 2 - (y - view.cy) * view.scale,
     };
   }
 
@@ -74,64 +168,89 @@ export function initUnitySceneScreen() {
   }
 
   function draw() {
-    if (!ctx || !canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    ctx.clearRect(0, 0, rect.width, rect.height);
+    if (!ctx || !canvasEl) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const W = rect.width, H = rect.height;
+    ctx.clearRect(0, 0, W, H);
 
     const gridStep = niceGridStep(view.scale);
-    const viewMinX = view.cx - rect.width / 2 / view.scale;
-    const viewMaxX = view.cx + rect.width / 2 / view.scale;
-    const viewMinZ = view.cz - rect.height / 2 / view.scale;
-    const viewMaxZ = view.cz + rect.height / 2 / view.scale;
+    const viewMinX = view.cx - W / 2 / view.scale;
+    const viewMaxX = view.cx + W / 2 / view.scale;
+    const viewMinY = view.cy - H / 2 / view.scale;
+    const viewMaxY = view.cy + H / 2 / view.scale;
 
     // Сетка
     ctx.strokeStyle = "#2a2a2a";
     ctx.lineWidth = 1;
     const startX = Math.floor(viewMinX / gridStep) * gridStep;
-    const startZ = Math.floor(viewMinZ / gridStep) * gridStep;
+    const startY = Math.floor(viewMinY / gridStep) * gridStep;
     for (let gx = startX; gx <= viewMaxX; gx += gridStep) {
-      const a = toScreen(gx, viewMinZ);
-      const b = toScreen(gx, viewMaxZ);
+      const a = toScreen(gx, viewMinY);
+      const b = toScreen(gx, viewMaxY);
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
-    for (let gz = startZ; gz <= viewMaxZ; gz += gridStep) {
-      const a = toScreen(viewMinX, gz);
-      const b = toScreen(viewMaxX, gz);
+    for (let gy = startY; gy <= viewMaxY; gy += gridStep) {
+      const a = toScreen(viewMinX, gy);
+      const b = toScreen(viewMaxX, gy);
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
 
-    // Оси через 0
+    // Оси
     ctx.strokeStyle = "#3e5a78";
-    const yAxis = toScreen(0, viewMinZ);
+    const yAxis = toScreen(0, viewMinY);
     const xAxis = toScreen(viewMinX, 0);
-    if (yAxis.x >= 0 && yAxis.x <= rect.width) {
-      ctx.beginPath(); ctx.moveTo(yAxis.x, 0); ctx.lineTo(yAxis.x, rect.height); ctx.stroke();
+    if (yAxis.x >= 0 && yAxis.x <= W) {
+      ctx.beginPath(); ctx.moveTo(yAxis.x, 0); ctx.lineTo(yAxis.x, H); ctx.stroke();
     }
-    if (xAxis.y >= 0 && xAxis.y <= rect.height) {
-      ctx.beginPath(); ctx.moveTo(0, xAxis.y); ctx.lineTo(rect.width, xAxis.y); ctx.stroke();
+    if (xAxis.y >= 0 && xAxis.y <= H) {
+      ctx.beginPath(); ctx.moveTo(0, xAxis.y); ctx.lineTo(W, xAxis.y); ctx.stroke();
     }
 
     if (!model) return;
 
-    // Объекты
     for (const g of model.gameObjects) {
-      const p = toScreen(g.worldX, g.worldZ);
-      if (p.x < -50 || p.x > rect.width + 50 || p.y < -50 || p.y > rect.height + 50) continue;
+      if (!isDrawable(g)) continue;
+      const p = toScreen(g.worldX, g.worldY);
+      const w = Math.max(3, g.sizeX * view.scale);
+      const h = Math.max(3, g.sizeY * view.scale);
+      const x0 = p.x - w / 2;
+      const y0 = p.y - h / 2;
       const isSel = g.fileID === selectedFileID;
-      const r = isSel ? 8 : 5;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = isSel ? "#ffb454" : (g.active ? "#7db0f0" : "#555");
-      ctx.fill();
-      if (isSel) {
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
-        ctx.stroke();
+
+      if (g.hasSprite) {
+        const c = g.spriteColor || { r: 1, g: 1, b: 1, a: 1 };
+        const cr = Math.round((c.r || 0) * 255);
+        const cg = Math.round((c.g || 0) * 255);
+        const cb = Math.round((c.b || 0) * 255);
+        const ca = c.a === undefined ? 1 : c.a;
+        ctx.fillStyle = "rgba(" + cr + "," + cg + "," + cb + "," + (0.25 * ca) + ")";
+        ctx.fillRect(x0, y0, w, h);
+        ctx.strokeStyle = isSel
+          ? "#ffb454"
+          : "rgba(" + cr + "," + cg + "," + cb + "," + Math.min(1, ca + 0.3) + ")";
+        ctx.lineWidth = isSel ? 2 : 1;
+        ctx.strokeRect(x0, y0, w, h);
+      } else if (g.isCanvas) {
+        ctx.save();
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = isSel ? "#ffb454" : "#7db0f0";
+        ctx.lineWidth = isSel ? 2 : 1;
+        ctx.strokeRect(x0, y0, w, h);
+        ctx.restore();
       }
+
       if (view.scale > 8 || isSel) {
         ctx.fillStyle = isSel ? "#fff" : "#999";
         ctx.font = "11px ui-monospace, monospace";
-        ctx.fillText(g.name, p.x + 10, p.y - 6);
+        const labelOffset = h / 2 + 12;
+        ctx.fillText(g.name, p.x + 8, p.y - labelOffset + 10);
+      }
+
+      if (isSel) {
+        ctx.fillStyle = "#ffb454";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
   }
@@ -152,6 +271,7 @@ export function initUnitySceneScreen() {
     li.className = "unity-tree-node";
     if (node.fileID === selectedFileID) li.classList.add("selected");
     if (!node.active) li.classList.add("inactive");
+    if (node.isPrefabInstance) li.classList.add("prefab");
 
     const row = document.createElement("div");
     row.className = "unity-tree-row";
@@ -162,6 +282,14 @@ export function initUnitySceneScreen() {
     arrow.textContent = node.children.length ? "▾" : "·";
     row.appendChild(arrow);
 
+    const icon = document.createElement("span");
+    icon.className = "unity-tree-icon";
+    if (node.isPrefabInstance) icon.textContent = "◆";
+    else if (node.hasSprite) icon.textContent = "▣";
+    else if (node.isCanvas) icon.textContent = "▢";
+    else icon.textContent = "◈";
+    row.appendChild(icon);
+
     const name = document.createElement("span");
     name.className = "unity-tree-name";
     name.textContent = node.name;
@@ -171,7 +299,6 @@ export function initUnitySceneScreen() {
       e.stopPropagation();
       selectNode(node.fileID);
     });
-
     li.appendChild(row);
 
     if (node.children.length) {
@@ -191,21 +318,28 @@ export function initUnitySceneScreen() {
 
   function selectNode(fileID) {
     selectedFileID = fileID;
-    openInspector();
+    if (inspectorPanel) inspectorPanel.classList.remove("closed");
     renderHierarchy();
     renderInspector();
     draw();
   }
 
-  function openInspector() {
-    if (inspectorPanel) inspectorPanel.classList.remove("closed");
-  }
-
-  function closeInspector() {
-    if (inspectorPanel) inspectorPanel.classList.add("closed");
-  }
-
   /* ---------- Инспектор ---------- */
+
+  const SKIP_FIELDS = new Set([
+    "m_ObjectHideFlags",
+    "m_CorrespondingSourceObject",
+    "m_PrefabInstance",
+    "m_PrefabAsset",
+    "m_GameObject",
+  ]);
+
+  function prettyName(name) {
+    let s = String(name);
+    if (s.startsWith("m_")) s = s.slice(2);
+    s = s.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+    return s;
+  }
 
   function renderInspector() {
     if (!inspectorEl) return;
@@ -223,7 +357,7 @@ export function initUnitySceneScreen() {
     head.className = "unity-insp-head";
     const icon = document.createElement("span");
     icon.className = "unity-insp-icon";
-    icon.textContent = "◈";
+    icon.textContent = go.isPrefabInstance ? "◆" : "◈";
     head.appendChild(icon);
     const title = document.createElement("span");
     title.className = "unity-insp-title";
@@ -234,6 +368,11 @@ export function initUnitySceneScreen() {
     badge.textContent = go.active ? "active" : "inactive";
     head.appendChild(badge);
     inspectorEl.appendChild(head);
+
+    if (go.isPrefabInstance) {
+      renderPrefabInstance(go, inspectorEl);
+      return;
+    }
 
     const order = [];
     if (go.transformId) order.push(go.transformId);
@@ -248,26 +387,98 @@ export function initUnitySceneScreen() {
     }
   }
 
-  // Служебные поля Unity, которые прячем из GUI — они бесполезны для чтения.
-  const SKIP_FIELDS = new Set([
-    "m_ObjectHideFlags",
-    "m_CorrespondingSourceObject",
-    "m_PrefabInstance",
-    "m_PrefabAsset",
-  ]);
+  function renderPrefabInstance(go, parent) {
+    const doc = model.byFileId.get(go.fileID);
+    const pi = doc && doc.data && doc.data.PrefabInstance;
+    if (!pi) return;
 
-  // m_LocalPosition → «Local Position», m_IsActive → «Is Active».
-  function prettyName(name) {
-    let s = String(name);
-    if (s.startsWith("m_")) s = s.slice(2);
-    s = s.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
-    return s;
+    const wrap = document.createElement("details");
+    wrap.className = "unity-component";
+    wrap.open = false;
+    const sum = document.createElement("summary");
+    sum.className = "unity-component-title";
+    sum.textContent = "Prefab Instance";
+    wrap.appendChild(sum);
+
+    const body = document.createElement("div");
+    body.className = "unity-component-body";
+    body.appendChild(makeStaticField("Source GUID", go.sourceGuid || "—"));
+    body.appendChild(makeStaticField("Name", go.name));
+    body.appendChild(makeVecField("Position", go.localPos, ["x", "y", "z"]));
+    body.appendChild(makeVecField("Scale", go.localScale, ["x", "y", "z"]));
+
+    const mods = pi.m_Modification && pi.m_Modification.m_Modifications;
+    if (Array.isArray(mods) && mods.length) {
+      const details = document.createElement("details");
+      details.className = "unity-subfields";
+      const sum2 = document.createElement("summary");
+      sum2.className = "unity-subfields-summary";
+      sum2.textContent = "Переопределений: " + mods.length;
+      details.appendChild(sum2);
+      const inner = document.createElement("div");
+      inner.className = "unity-subfields-body";
+      for (const m of mods) {
+        const f = document.createElement("div");
+        f.className = "unity-field";
+        const label = document.createElement("div");
+        label.className = "unity-field-label";
+        label.textContent = String(m.propertyPath || "?");
+        f.appendChild(label);
+        const ctrl = document.createElement("div");
+        ctrl.className = "unity-field-control";
+        const v = document.createElement("span");
+        v.className = "unity-field-scalar";
+        v.textContent = String(m.value !== undefined ? m.value : "—");
+        ctrl.appendChild(v);
+        f.appendChild(ctrl);
+        inner.appendChild(f);
+      }
+      details.appendChild(inner);
+      body.appendChild(details);
+    }
+
+    wrap.appendChild(body);
+    parent.appendChild(wrap);
+  }
+
+  function makeStaticField(label, value) {
+    const row = document.createElement("div");
+    row.className = "unity-field";
+    const l = document.createElement("div");
+    l.className = "unity-field-label";
+    l.textContent = label;
+    row.appendChild(l);
+    const c = document.createElement("div");
+    c.className = "unity-field-control";
+    const v = document.createElement("span");
+    v.className = "unity-field-scalar";
+    v.textContent = String(value);
+    c.appendChild(v);
+    row.appendChild(c);
+    return row;
+  }
+
+  function makeVecField(label, obj, order) {
+    const row = document.createElement("div");
+    row.className = "unity-field";
+    const l = document.createElement("div");
+    l.className = "unity-field-label";
+    l.textContent = label;
+    row.appendChild(l);
+    const c = document.createElement("div");
+    c.className = "unity-field-control";
+    const vec = document.createElement("div");
+    vec.className = "unity-vec";
+    for (const k of order) vec.appendChild(makeVecCell(k, obj[k]));
+    c.appendChild(vec);
+    row.appendChild(c);
+    return row;
   }
 
   function renderComponent(doc) {
     const wrap = document.createElement("details");
     wrap.className = "unity-component";
-    wrap.open = true;
+    wrap.open = false;
 
     const sum = document.createElement("summary");
     sum.className = "unity-component-title";
@@ -276,7 +487,7 @@ export function initUnitySceneScreen() {
 
     const body = document.createElement("div");
     body.className = "unity-component-body";
-    const keys = Object.keys(doc.data);
+    const keys = Object.keys(doc.data || {});
     const inner = keys.length ? doc.data[keys[0]] : doc.data;
     if (inner && typeof inner === "object") {
       renderFieldsGui(inner, body, 0);
@@ -340,7 +551,6 @@ export function initUnitySceneScreen() {
   function renderObjectControl(obj, control) {
     const keys = Object.keys(obj);
 
-    // Ссылка {fileID: N} — кнопка, кликабельная, если ссылается на GameObject.
     if (keys.length === 1 && keys[0] === "fileID") {
       const fid = String(obj.fileID);
       if (fid === "0") {
@@ -363,7 +573,6 @@ export function initUnitySceneScreen() {
       return;
     }
 
-    // Векторы: 2/3/4 компонента x/y/z/w.
     const vecKeys = ["x", "y", "z", "w"];
     const isVector = keys.length > 0 && keys.every((k) => vecKeys.includes(k))
       && keys.includes("x") && keys.includes("y");
@@ -372,7 +581,6 @@ export function initUnitySceneScreen() {
       return;
     }
 
-    // Цвет: r, g, b, a + свотч.
     if (keys.length === 4 && ["r", "g", "b", "a"].every((k) => k in obj)) {
       const c = document.createElement("div");
       c.className = "unity-vec unity-color";
@@ -389,12 +597,11 @@ export function initUnitySceneScreen() {
       return;
     }
 
-    // Прочее — раскрываемый подраздел со вложенными полями.
     const details = document.createElement("details");
     details.className = "unity-subfields";
     const sum = document.createElement("summary");
     sum.className = "unity-subfields-summary";
-    sum.textContent = prettyName(Object.keys(obj)[0] || "object") + " (" + keys.length + ")";
+    sum.textContent = prettyName(keys[0] || "object") + " (" + keys.length + ")";
     details.appendChild(sum);
     const body = document.createElement("div");
     body.className = "unity-subfields-body";
@@ -466,67 +673,81 @@ export function initUnitySceneScreen() {
     return n.toFixed(4).replace(/\.?0+$/, "");
   }
 
+  /* ---------- Hit test ---------- */
+
+  function hitTest(mx, my) {
+    if (!model) return null;
+    for (let i = model.gameObjects.length - 1; i >= 0; i--) {
+      const g = model.gameObjects[i];
+      if (!isDrawable(g)) continue;
+      const p = toScreen(g.worldX, g.worldY);
+      const w = Math.max(3, g.sizeX * view.scale);
+      const h = Math.max(3, g.sizeY * view.scale);
+      if (mx >= p.x - w / 2 && mx <= p.x + w / 2 &&
+          my >= p.y - h / 2 && my <= p.y + h / 2) {
+        return g;
+      }
+    }
+    return null;
+  }
+
   /* ---------- Управление видом ---------- */
 
   let dragState = null;
 
-  if (canvas) {
-    canvas.addEventListener("mousedown", (e) => {
-      dragState = { x: e.clientX, y: e.clientY };
+  if (canvasEl) {
+    canvasEl.addEventListener("mousedown", (e) => {
+      dragState = { x: e.clientX, y: e.clientY, moved: false };
     });
     window.addEventListener("mousemove", (e) => {
       if (!dragState) return;
       const dx = e.clientX - dragState.x;
       const dy = e.clientY - dragState.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) dragState.moved = true;
       view.cx -= dx / view.scale;
-      view.cz += dy / view.scale;
+      view.cy += dy / view.scale;
       dragState.x = e.clientX;
       dragState.y = e.clientY;
       draw();
     });
     window.addEventListener("mouseup", () => { dragState = null; });
 
-    canvas.addEventListener("wheel", (e) => {
+    canvasEl.addEventListener("wheel", (e) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
       view.scale = Math.max(2, Math.min(400, view.scale * factor));
       draw();
     }, { passive: false });
 
-    canvas.addEventListener("click", (e) => {
-      if (!model) return;
-      const rect = canvas.getBoundingClientRect();
+    canvasEl.addEventListener("click", (e) => {
+      const rect = canvasEl.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
-      let best = null, bestD = 14;
-      for (const g of model.gameObjects) {
-        const p = toScreen(g.worldX, g.worldZ);
-        const d = Math.hypot(p.x - mx, p.y - my);
-        if (d < bestD) { bestD = d; best = g; }
-      }
-      if (best) selectNode(best.fileID);
+      const hit = hitTest(mx, my);
+      if (hit) selectNode(hit.fileID);
     });
 
     let touchStart = null;
-    canvas.addEventListener("touchstart", (e) => {
+    canvasEl.addEventListener("touchstart", (e) => {
       if (e.touches.length === 1) {
-        touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+        touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now(), moved: false };
       } else if (e.touches.length === 2) {
         const d = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
-        touchStart = { pinch: d, scale: view.scale };
+        touchStart = { pinch: d, scale: view.scale, moved: true };
       }
     }, { passive: true });
 
-    canvas.addEventListener("touchmove", (e) => {
+    canvasEl.addEventListener("touchmove", (e) => {
       if (!touchStart) return;
       if (e.touches.length === 1 && touchStart.x !== undefined) {
         const dx = e.touches[0].clientX - touchStart.x;
         const dy = e.touches[0].clientY - touchStart.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) touchStart.moved = true;
         view.cx -= dx / view.scale;
-        view.cz += dy / view.scale;
+        view.cy += dy / view.scale;
         touchStart.x = e.touches[0].clientX;
         touchStart.y = e.touches[0].clientY;
         draw();
@@ -541,73 +762,62 @@ export function initUnitySceneScreen() {
       }
     }, { passive: true });
 
-    canvas.addEventListener("touchend", (e) => {
+    canvasEl.addEventListener("touchend", (e) => {
       if (!touchStart) return;
       const elapsed = Date.now() - (touchStart.t || 0);
-      if (touchStart.x !== undefined && elapsed < 300 && e.changedTouches.length) {
+      if (touchStart.x !== undefined && elapsed < 400 && !touchStart.moved && e.changedTouches.length) {
         const touch = e.changedTouches[0];
-        const rect = canvas.getBoundingClientRect();
-        const mx = touch.clientX - rect.left;
-        const my = touch.clientY - rect.top;
-        const dx = touch.clientX - touchStart.x;
-        const dy = touch.clientY - touchStart.y;
-        if (Math.hypot(dx, dy) < 8 && model) {
-          let best = null, bestD = 20;
-          for (const g of model.gameObjects) {
-            const p = toScreen(g.worldX, g.worldZ);
-            const d = Math.hypot(p.x - mx, p.y - my);
-            if (d < bestD) { bestD = d; best = g; }
-          }
-          if (best) selectNode(best.fileID);
-        }
+        const rect = canvasEl.getBoundingClientRect();
+        const hit = hitTest(touch.clientX - rect.left, touch.clientY - rect.top);
+        if (hit) selectNode(hit.fileID);
       }
       touchStart = null;
     }, { passive: true });
 
     window.addEventListener("resize", resizeCanvas);
 
-    // Пересобираем канвас и при изменении размеров контейнера:
-    // инспектор может разворачиваться/сворачиваться, а сцена должна
-    // тянуться за ним без артефактов.
-    if (window.ResizeObserver && canvas.parentElement) {
+    if (window.ResizeObserver && canvasEl.parentElement) {
       let raf = 0;
       const ro = new ResizeObserver(() => {
         if (raf) return;
         raf = requestAnimationFrame(() => { raf = 0; resizeCanvas(); });
       });
-      ro.observe(canvas.parentElement);
+      ro.observe(canvasEl.parentElement);
     }
+  }
 
-    // Сворачивание иерархии.
-    if (hierarchyToggle && hierarchyPanel) {
-      hierarchyToggle.addEventListener("click", () => {
-        const collapsed = hierarchyPanel.classList.toggle("collapsed");
-        hierarchyToggle.textContent = collapsed ? "▸" : "▾";
-        hierarchyToggle.title = collapsed ? "Развернуть" : "Свернуть";
-      });
-    }
-
-    // Закрытие инспектора. Открывается снова при выборе объекта.
-    if (inspectorCloseBtn && inspectorPanel) {
-      inspectorCloseBtn.addEventListener("click", () => {
-        closeInspector();
-      });
-    }
+  function syncView() {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      resizeCanvas();
+      autoFit();
+      draw();
+    }));
   }
 
   return {
     open(path, text) {
       if (pathEl) pathEl.textContent = path;
+
+      // Стили и кнопки панелей — создаём при первом открытии.
+      injectStyles();
+      ensureHierarchyToggle();
+      ensureInspectorClose();
+
       const docs = parseUnityYaml(text);
       model = buildSceneModel(docs);
       selectedFileID = null;
+
+      // Инспектор закрыт, иерархия развёрнута.
+      if (inspectorPanel) inspectorPanel.classList.add("closed");
+      if (hierarchyPanel) hierarchyPanel.classList.remove("collapsed");
+      if (hierarchyToggleBtn) {
+        hierarchyToggleBtn.textContent = "▾";
+        hierarchyToggleBtn.title = "Свернуть";
+      }
+
       renderHierarchy();
       renderInspector();
-      setTimeout(() => {
-        resizeCanvas();
-        autoFit();
-        draw();
-      }, 0);
+      syncView();
     },
     close() {
       model = null;
@@ -615,13 +825,13 @@ export function initUnitySceneScreen() {
       if (hierEl) hierEl.innerHTML = "";
       if (inspectorEl) inspectorEl.innerHTML = "";
       if (hierarchyPanel) hierarchyPanel.classList.remove("collapsed");
-      if (inspectorPanel) inspectorPanel.classList.remove("closed");
-      if (hierarchyToggle) {
-        hierarchyToggle.textContent = "▾";
-        hierarchyToggle.title = "Свернуть";
+      if (inspectorPanel) inspectorPanel.classList.add("closed");
+      if (hierarchyToggleBtn) {
+        hierarchyToggleBtn.textContent = "▾";
+        hierarchyToggleBtn.title = "Свернуть";
       }
-      if (ctx && canvas) {
-        const rect = canvas.getBoundingClientRect();
+      if (ctx && canvasEl) {
+        const rect = canvasEl.getBoundingClientRect();
         ctx.clearRect(0, 0, rect.width, rect.height);
       }
     },
