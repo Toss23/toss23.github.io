@@ -349,6 +349,17 @@
     </div>
   </div>
 
+  <!-- Стили подпунктов в модалке настроек -->
+  <style>
+    #settings-icons-standard-row,
+    #settings-icons-unity-row {
+      padding-left: 28px;
+      border-left: 2px solid #3c3c3c;
+      margin-left: 6px;
+      opacity: 0.95;
+    }
+  </style>
+
   <!-- Модалка настроек приложения -->
   <div id="settings-modal" class="modal hidden">
     <div class="modal-content dialog-content">
@@ -365,7 +376,7 @@
           </label>
         </div>
         <div id="settings-icons-standard-row" class="editor-settings-row settings-sub">
-          <span>Стандартные файлы</span>
+          <span>Системные файлы</span>
           <label class="editor-switch">
             <input id="settings-icons-standard" type="checkbox">
             <span class="editor-switch-slider"></span>
