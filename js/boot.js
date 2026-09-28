@@ -131,23 +131,24 @@ async function findSiteRepo(token, app) {
 function showRecoveryButton(owner, repo, branch) {
   if (document.getElementById("boot-recovery")) return;
 
+  // Стиль инжектируем один раз: класс primary/big даёт размер и форму,
+  // как у кнопки «Повторить», а этот блок перекрашивает её в зелёный.
+  if (!document.getElementById("boot-recovery-style")) {
+    const style = document.createElement("style");
+    style.id = "boot-recovery-style";
+    style.textContent =
+      "#boot-recovery{background:#2d7d3a !important;border-color:#2d7d3a !important;color:#fff !important;text-decoration:none;margin-top:12px;}" +
+      "#boot-recovery:hover,#boot-recovery:active{background:#256b30 !important;border-color:#256b30 !important;}";
+    document.head.appendChild(style);
+  }
+
   const link = document.createElement("a");
   link.id = "boot-recovery";
+  link.className = "primary big";
   link.href = "https://github.com/" + owner + "/" + repo + "/commits/" + branch;
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   link.textContent = "🔗 Открыть историю коммитов на GitHub";
-  link.style.cssText = [
-    "display:inline-block",
-    "margin-top:12px",
-    "padding:10px 16px",
-    "border-radius:6px",
-    "background:#2d7d3a",
-    "color:#fff",
-    "text-decoration:none",
-    "font-weight:600",
-    "font-size:14px",
-  ].join(";");
 
   const parent = (bootRetry && bootRetry.parentNode) || bootScreen;
   if (!parent) return;
