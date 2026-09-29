@@ -59,6 +59,7 @@ import { initHistoryScreen } from "@screens/history-screen.js";
 import { initImageScreen } from "@screens/image-screen.js";
 import { initAudioScreen } from "@screens/audio-screen.js";
 import { initUnitySceneScreen } from "@screens/unity-scene-screen.js";
+import { initMediaOpeners } from "@screens/media-openers.js";
 import { initCommitScreen } from "@screens/commit-screen.js";
 
 import { SCREENS, isImagePath, isAudioPath, isUnityScenePath, APP_REPO } from "@core/config.js";
@@ -402,6 +403,19 @@ const historyModal = initHistoryModal({ onRevert: handleRevertCommit });
 const imageScreen = initImageScreen();
 const audioScreen = initAudioScreen();
 const unitySceneScreen = initUnitySceneScreen();
+
+// Открытие бинарных файлов, картинок, аудио и сцен Unity вынесено
+// в отдельный модуль. Здесь только инициализация — main передаёт
+// ему свои зависимости через context.
+const mediaOpeners = initMediaOpeners({
+  setStatus,
+  setScreen,
+  dialogs,
+  imageScreen,
+  audioScreen,
+  unitySceneScreen,
+  getCurrentFileContent: (p) => getCurrentFileContent(p),
+});
 
 /* ---------- Авто-проверка обновлений в local ---------- */
 
@@ -2387,23 +2401,8 @@ function triggerDownload(blob, name) {
 }
 
 /* ---------- Просмотр бинарных файлов и изображений ---------- */
-
-async function openBinaryFile(file) {
-  const { octokit, repo } = getState();
-  if (!octokit || !repo) return;
-
-  if (isImagePath(file.path)) {
-    return openImage(file);
-  }
-  if (isAudioPath(file.path)) {
-    return openAudio(file);
-  }
-
-  await dialogs.alert({
-    title: "Бинарный файл",
-    text: `${file.path}\n${formatSize(file.size || 0)}\n\nПросмотр недоступен.`,
-  });
-}
+/* Функции openBinaryFile, openImage, openAudio, openUnityScene и
+   readUnityAssetBytes вынесены в @screens/media-openers.js. */
 
 async function openImage(file) {
   const { octokit, repo, cloned, mode } = getState();
@@ -2944,16 +2943,16 @@ async function renameFolder(oldPrefix, newPrefix) {
 
 async function openFile(file) {
   if (isUnityScenePath(file.path)) {
-    return openUnityScene(file);
+    return mediaOpeners.openUnityScene(file);
   }
   if (file.isBinary) {
-    return openBinaryFile(file);
+    return mediaOpeners.openBinaryFile(file);
   }
   if (isImagePath(file.path)) {
-    return openImage(file);
+    return mediaOpeners.openImage(file);
   }
   if (isAudioPath(file.path)) {
-    return openAudio(file);
+    return mediaOpeners.openAudio(file);
   }
 
   // Сохраняем содержимое предыдущей вкладки, если есть несохранённые правки.
