@@ -236,6 +236,24 @@ export function initUnitySceneScreen() {
       ctx.beginPath(); ctx.moveTo(0, xAxis.y); ctx.lineTo(W, xAxis.y); ctx.stroke();
     }
 
+    // Рамка игрового поля 1920×1080 при PPU=100. Размер в единицах
+    // сцены: 19.2 × 10.8, центр в (0, 0). Пунктирная, чтобы не мешать
+    // восприятию объектов.
+    (function drawGameFrame() {
+      const FW = 19.2, FH = 10.8;
+      const tl = toScreen(-FW / 2, FH / 2);
+      const br = toScreen(FW / 2, -FH / 2);
+      ctx.save();
+      ctx.strokeStyle = "rgba(125, 176, 240, 0.55)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([10, 6]);
+      ctx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+      ctx.restore();
+      ctx.fillStyle = "rgba(125, 176, 240, 0.75)";
+      ctx.font = "10px ui-monospace, monospace";
+      ctx.fillText("1920×1080", tl.x + 4, tl.y + 12);
+    })();
+
     if (!model) return;
 
     for (const g of model.gameObjects) {
