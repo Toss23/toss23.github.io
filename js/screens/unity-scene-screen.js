@@ -166,16 +166,26 @@ export function initUnitySceneScreen() {
     return step * pow;
   }
 
-  // Рисует PSB-картинку целиком, вписывая её в bbox объекта.
-  // Нарезка атласа по спрайтам — отдельная задача; в базовом режиме
-  // показываем всё содержимое PSB, как оно есть.
+  // Рисует PSB-картинку, вписывая её в bbox без искажения пропорций.
+  // Масштаб — единый по обеим осям (min из двух), центрируется внутри bbox.
+  // Рамка выделения остаётся по границам bbox — по ней видно, где объект
+  // «живёт» в мире, а картинка внутри уже сохраняет свои пропорции.
   function drawBitmap(g, bx, by, wPx, hPx, isSel) {
-    try {
-      ctx.drawImage(g.bitmap, 0, 0, g.bitmap.width, g.bitmap.height, bx, by, wPx, hPx);
-    } catch (e) {
-      ctx.strokeStyle = "#f48771";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(bx, by, wPx, hPx);
+    const srcW = g.bitmap.width;
+    const srcH = g.bitmap.height;
+    if (srcW && srcH) {
+      const scale = Math.min(wPx / srcW, hPx / srcH);
+      const drawW = srcW * scale;
+      const drawH = srcH * scale;
+      const dx = bx + (wPx - drawW) / 2;
+      const dy = by + (hPx - drawH) / 2;
+      try {
+        ctx.drawImage(g.bitmap, 0, 0, srcW, srcH, dx, dy, drawW, drawH);
+      } catch (e) {
+        ctx.strokeStyle = "#f48771";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bx, by, wPx, hPx);
+      }
     }
     if (isSel) {
       ctx.strokeStyle = "#ffb454";
@@ -238,25 +248,15 @@ export function initUnitySceneScreen() {
       const cb = Math.round((c.b || 0) * 255);
       const ca = c.a === undefined ? 1 : c.a;
 
-      // 1. Есть картинка — рисуем её (с вырезкой области спрайтов).
+      // 1. Есть картинка — рисуем её, сохраняя пропорции.
       if (g.bitmap) {
         const p = toScreen(g.worldX, g.worldY);
         const wPx = Math.max(2, Math.abs(g.sizeX) * view.scale);
         const hPx = Math.max(2, Math.abs(g.sizeY) * view.scale);
         const bx = p.x - wPx / 2;
         const by = p.y - hPx / 2;
-        console.log("[unity-scene] draw bitmap:", g.name,
-          "bitmap=" + g.bitmap.width + "×" + g.bitmap.height,
-          "doc=" + g.docWidthPx + "×" + g.docHeightPx,
-          "bboxPx=" + g.docMinPx + "," + g.docMinPy + " → " + g.docMaxPx + "," + g.docMaxPy,
-          "→", bx.toFixed(0) + "," + by.toFixed(0), wPx.toFixed(0) + "×" + hPx.toFixed(0));
         drawBitmap(g, bx, by, wPx, hPx, isSel);
         continue;
-      } else {
-        console.warn("[unity-scene] no bitmap для", g.name,
-          "· hasSprite=" + g.hasSprite,
-          "· bitmapW=" + (g.bitmapW || 0),
-          "· bitmapH=" + (g.bitmapH || 0));
       }
 
       // 2. Иначе — прямоугольник по bbox.
