@@ -4,9 +4,8 @@
 
 import { getState, setState, removeDeleted } from "@core/store.js";
 import * as storage from "@core/storage.js";
-import {
-  detectEol, fromLf, gitBlobSha, gitBlobShaFromBase64,
-} from "@core/encoding.js";
+import { detectEol, fromLf } from "@core/encoding.js";
+import { gitBlobSha, gitBlobShaFromBase64 } from "@core/git-sha.js";
 import { readUploadedFile, saveUploadedEntry } from "@api/upload.js";
 
 // Импорт git-sha отдельно — там есть gitBlobSha, но он не из encoding.
