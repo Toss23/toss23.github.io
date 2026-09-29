@@ -489,9 +489,12 @@ export async function loadPrefabBoundingBox({
     return { hasSprite: false };
   }
 
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
   return {
     hasSprite: true,
     minX, minY, maxX, maxY,
+    centerX, centerY,
     bitmap,
     imagePPU,
     imageWidth,
