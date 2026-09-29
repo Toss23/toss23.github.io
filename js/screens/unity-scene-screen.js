@@ -166,37 +166,20 @@ export function initUnitySceneScreen() {
     return step * pow;
   }
 
-  // Вырезает из PSB-картинки область, соответствующую спрайтам,
-  // и рисует её в bbox объекта. Картинка и bbox могут иметь разный
-  // размер и соотношение сторон — sourceRect выравнивает их.
+  // Диагностический режим: рисуем всю картинку целиком, без вырезки.
+  // Так видно, что в ней есть и где она реально начинается.
   function drawBitmap(g, bx, by, wPx, hPx, isSel) {
     const srcW = g.bitmap.width;
     const srcH = g.bitmap.height;
 
-    let sx = 0, sy = 0, sw = srcW, sh = srcH;
-
-    // Если известно, где в документе находятся спрайты (в пикселях),
-    // и известен размер документа — вырезаем эту область.
-    if (g.docWidthPx > 0 && g.docHeightPx > 0 &&
-        g.docMaxPx > g.docMinPx && g.docMaxPy > g.docMinPy) {
-      const kx = srcW / g.docWidthPx;
-      const ky = srcH / g.docHeightPx;
-      sx = g.docMinPx * kx;
-      sw = (g.docMaxPx - g.docMinPx) * kx;
-      // В PSD Y идёт снизу вверх, в ImageBitmap — сверху вниз.
-      // Верхний край области в картинке = (docHeight - docMaxPy).
-      const topPx = g.docHeightPx - g.docMaxPy;
-      const bottomPx = g.docHeightPx - g.docMinPy;
-      sy = topPx * ky;
-      sh = (bottomPx - topPx) * ky;
-    }
-
-    if (sw <= 0 || sh <= 0) {
-      sx = 0; sy = 0; sw = srcW; sh = srcH;
-    }
+    console.log("[draw-bitmap]", g.name,
+      "src=" + srcW + "×" + srcH,
+      "dstPx=" + wPx.toFixed(0) + "×" + hPx.toFixed(0),
+      "doc=" + g.docWidthPx + "×" + g.docHeightPx,
+      "crop=" + g.docMinPx + "," + g.docMinPy + "→" + g.docMaxPx + "," + g.docMaxPy);
 
     try {
-      ctx.drawImage(g.bitmap, sx, sy, sw, sh, bx, by, wPx, hPx);
+      ctx.drawImage(g.bitmap, 0, 0, srcW, srcH, bx, by, wPx, hPx);
     } catch (e) {
       ctx.strokeStyle = "#f48771";
       ctx.lineWidth = 1;
