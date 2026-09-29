@@ -15,6 +15,7 @@ import { loadToken, saveToken, clearToken, createClient, fetchUser } from "@api/
 import {
   listRepos, listBranches, listFiles, getFile,
   compareCommits, listCommits, getCommit, getBlobRaw,
+  fetchRawAsset,
   initEmptyRepo,
 } from "@api/github.js";
 import { commitFiles } from "@api/commit.js";
@@ -2440,8 +2441,14 @@ async function openImage(file) {
 // Читает байты Unity-ассета (psb, psd, png, jpg, tga).
 // Работает, даже если файл не попал в state.files из-за размера.
 // Возвращает Uint8Array или null.
+// Читает байты Unity-ассета (psb, psd, png, jpg, tga).
+// Для удалённых репозиториев использует raw.githubusercontent.com — он
+// отдаёт сырой файл без обёрток и не портит бинарные данные (в отличие
+// от base64-контента octokit, который может терять байты в UTF-8).
+// Работает, даже если файл не попал в state.files.
+// Возвращает Uint8Array или null.
 async function readUnityAssetBytes(path) {
-  const { octokit, repo, branch, mode, cloned, files } = getState();
+  const { octokit, repo, branch, mode, cloned } = getState();
   if (!repo) return null;
 
   // 1. Local — из IndexedDB.
@@ -2452,7 +2459,6 @@ async function readUnityAssetBytes(path) {
         return base64ToBytes(entry.content);
       }
       if (entry && typeof entry.content === "string") {
-        // Не бинарный, но тоже может пригодиться (yml/yaml).
         const enc = new TextEncoder();
         return enc.encode(entry.content);
       }
@@ -2461,18 +2467,20 @@ async function readUnityAssetBytes(path) {
     }
   }
 
-  // 2. Remote — если файл есть в списке, у нас есть SHA.
-  const f = files.find((x) => x.path === path);
-  if (f && f.sha) {
-    try {
-      const blob = await getBlobRaw(octokit, repo.owner, repo.name, f.sha);
-      return new Uint8Array(await blob.arrayBuffer());
-    } catch (e) {
-      console.warn("getBlobRaw:", path, e.message);
+  // 2. Remote — через raw.githubusercontent.com. Токен нужен для приватных репо.
+  try {
+    const token = loadToken();
+    const bytes = await fetchRawAsset(repo.owner, repo.name, branch, path, token);
+    if (bytes && bytes.length) {
+      console.log("[readAsset] raw:", path, bytes.length, "байт, сигнатура:",
+        String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]));
+      return bytes;
     }
+  } catch (e) {
+    console.warn("[readAsset] raw не удалось:", path, e.message);
   }
 
-  // 3. Remote — файла нет в списке. Запрашиваем через API напрямую.
+  // 3. Резерв — старый способ через octokit (может испортить данные).
   try {
     const res = await octokit.repos.getContent({
       owner: repo.owner, repo: repo.name, path, ref: branch,
@@ -2483,11 +2491,14 @@ async function readUnityAssetBytes(path) {
         const bin = atob(String(d.content).replace(/\s/g, ""));
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        console.warn("[readAsset] octokit getContent:", path, "(может быть испорчено)");
         return bytes;
       }
       if (d.sha) {
         const blob = await getBlobRaw(octokit, repo.owner, repo.name, d.sha);
-        return new Uint8Array(await blob.arrayBuffer());
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        console.warn("[readAsset] octokit getBlob:", path, "(может быть испорчено)");
+        return bytes;
       }
     }
   } catch (e) {
