@@ -2466,42 +2466,40 @@ async function readUnityAssetBytes(path) {
     }
   }
 
-  // 2. Remote — через raw.githubusercontent.com. Токен нужен для приватных репо.
+  // Remote — через octokit Git Blob API.
+  // Для файла из state.files у нас уже есть SHA — используем его напрямую.
+  // Если файла в списке нет (например, из-за лимита размера),
+  // запрашиваем SHA через repos.getContent и идём в Git Blob.
   try {
-    const token = loadToken();
-    const bytes = await fetchRawAsset(repo.owner, repo.name, branch, path, token);
-    if (bytes && bytes.length) {
-      console.log("[readAsset] raw:", path, bytes.length, "байт, сигнатура:",
-        String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]));
+    const file = getState().files.find((f) => f.path === path);
+    let sha = file && file.sha;
+
+    if (!sha) {
+      const res = await octokit.repos.getContent({
+        owner: repo.owner, repo: repo.name, path, ref: branch,
+      });
+      const d = res && res.data;
+      if (d && typeof d === "object") {
+        if (d.sha) sha = d.sha;
+        else if (d.content && d.encoding === "base64") {
+          // Мелкий файл, пришёл как base64 — декодируем.
+          const bin = atob(String(d.content).replace(/\s/g, ""));
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          console.log("[readAsset] getContent:", path, bytes.length, "байт");
+          return bytes;
+        }
+      }
+    }
+
+    if (sha) {
+      const blob = await getBlobRaw(octokit, repo.owner, repo.name, sha);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      console.log("[readAsset] getBlob:", path, bytes.length, "байт");
       return bytes;
     }
   } catch (e) {
-    console.warn("[readAsset] raw не удалось:", path, e.message);
-  }
-
-  // 3. Резерв — старый способ через octokit (может испортить данные).
-  try {
-    const res = await octokit.repos.getContent({
-      owner: repo.owner, repo: repo.name, path, ref: branch,
-    });
-    const d = res && res.data;
-    if (d && typeof d === "object") {
-      if (d.content && d.encoding === "base64") {
-        const bin = atob(String(d.content).replace(/\s/g, ""));
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        console.warn("[readAsset] octokit getContent:", path, "(может быть испорчено)");
-        return bytes;
-      }
-      if (d.sha) {
-        const blob = await getBlobRaw(octokit, repo.owner, repo.name, d.sha);
-        const bytes = new Uint8Array(await blob.arrayBuffer());
-        console.warn("[readAsset] octokit getBlob:", path, "(может быть испорчено)");
-        return bytes;
-      }
-    }
-  } catch (e) {
-    console.warn("readUnityAssetBytes remote:", path, e.message);
+    console.warn("[readAsset] не удалось:", path, e.message);
   }
 
   return null;
