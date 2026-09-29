@@ -205,6 +205,80 @@ function openCreateMenu() {
   });
 }
 
+// Кнопка «Сцена Unity» в панели действий над файлами.
+// Показывается, если в репозитории есть .unity файлы. Одна сцена —
+// открывается сразу, несколько — предлагается выбор.
+let unitySceneBtn = null;
+
+function ensureUnitySceneButton() {
+  if (unitySceneBtn) return unitySceneBtn;
+  const actions = document.getElementById("file-actions");
+  if (!actions) return null;
+  const btn = document.createElement("button");
+  btn.id = "btn-unity-scene";
+  btn.type = "button";
+  btn.className = "icon-btn hidden";
+  btn.title = "Открыть сцену Unity";
+  btn.textContent = "🎬 Сцена Unity";
+  btn.addEventListener("click", () => openUnitySceneFromMenu());
+  // Вставляем после кнопки «История», если она есть. Иначе — в конец.
+  const historyBtn = document.getElementById("btn-history");
+  if (historyBtn && historyBtn.parentNode === actions) {
+    historyBtn.insertAdjacentElement("afterend", btn);
+  } else {
+    actions.appendChild(btn);
+  }
+  unitySceneBtn = btn;
+  return btn;
+}
+
+function getUnityScenes() {
+  const { files } = getState();
+  return (files || []).filter((f) => f.path.toLowerCase().endsWith(".unity"));
+}
+
+function updateUnitySceneButton() {
+  const btn = ensureUnitySceneButton();
+  if (!btn) return;
+  const { mode } = getState();
+  if (!mode) { btn.classList.add("hidden"); return; }
+  const scenes = getUnityScenes();
+  if (!scenes.length) { btn.classList.add("hidden"); return; }
+  btn.classList.remove("hidden");
+  btn.textContent = scenes.length > 1
+    ? "🎬 Сцена Unity (" + scenes.length + ")"
+    : "🎬 Сцена Unity";
+}
+
+async function openUnitySceneFromMenu() {
+  const scenes = getUnityScenes();
+  if (!scenes.length) return;
+
+  if (scenes.length === 1) {
+    await openFile(scenes[0]);
+    return;
+  }
+
+  // Модалка выбора сцены через существующий dialogs.choose.
+  const picked = await new Promise((resolve) => {
+    dialogs.choose({
+      title: "Выберите сцену Unity",
+      text: "В репозитории " + scenes.length + " сцен.",
+      onDismiss: () => resolve(null),
+      options: [
+        ...scenes.map((s) => ({
+          text: s.path,
+          onClick: () => resolve(s),
+        })),
+        { text: "Отмена", onClick: () => resolve(null) },
+      ],
+    });
+  });
+
+  if (!picked) return;
+  await openFile(picked);
+}
+
 function openMoreMenu() {
   const { mode, files } = getState();
   if (!mode) return;
@@ -1308,6 +1382,10 @@ function renderFiles() {
     selection: state.selection,
     remoteChanges: state.remoteChanges,
   });
+
+  // Кнопка «Сцена Unity» — показать/скрыть в зависимости от наличия
+  // .unity файлов в текущем репозитории.
+  updateUnitySceneButton();
 }
 
 function openFolder(name) {
