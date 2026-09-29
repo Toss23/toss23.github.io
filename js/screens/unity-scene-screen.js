@@ -363,15 +363,23 @@ export function initUnitySceneScreen() {
         pi.spriteColor = info.color || { r: 1, g: 1, b: 1, a: 1 };
         pi.sizeX = Math.abs(w * pi.localScale.x);
         pi.sizeY = Math.abs(h * pi.localScale.y);
-        // Центр картинки = localPos + центр bbox.
-        // Bbox префаба включает в себя localPosition всех дочерних
-        // объектов (например, вложенного PrefabInstance с PSB). Если
-        // origin GameObject'а в ногах персонажа — bbox будет выше нуля,
-        // и картинка сдвинется вверх вместе с ним.
-        const ccx = info.centerX || 0;
-        const ccy = info.centerY || 0;
-        pi.worldX = pi.localPos.x + ccx * pi.localScale.x;
-        pi.worldY = pi.localPos.y + ccy * pi.localScale.y;
+        // Позиция центра картинки относительно origin GameObject'а.
+        // Зависит от pivot'а документа: pivotX/pivotY — доли (0..1) от
+        // левого-низа. В собственных координатах картинки её центр =
+        // (imgW/2, imgH/2), а origin (0,0) сидит в pivot:
+        //   imgCenterX = imgW/2 - pivotX * imgW
+        //   imgCenterY = imgH/2 - pivotY * imgH
+        // Для BottomCenter (0.5, 0): imgCenterY = imgH/2 — картинка
+        // поднимается над origin'ом, как и ожидается для персонажа.
+        const ppu = info.imagePPU || 100;
+        const imgW = (info.imageWidth || 0) / ppu;
+        const imgH = (info.imageHeight || 0) / ppu;
+        const px = (typeof info.pivotX === "number") ? info.pivotX : 0.5;
+        const py = (typeof info.pivotY === "number") ? info.pivotY : 0.0;
+        const imgCenterX = imgW / 2 - px * imgW;
+        const imgCenterY = imgH / 2 - py * imgH;
+        pi.worldX = pi.localPos.x + imgCenterX * pi.localScale.x;
+        pi.worldY = pi.localPos.y + imgCenterY * pi.localScale.y;
 
         pi.bitmap = info.bitmap || null;
         pi.bitmapW = info.imageWidth || (info.bitmap ? info.bitmap.width : 0);

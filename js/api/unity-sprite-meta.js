@@ -57,5 +57,14 @@ export function parseSpriteMeta(text) {
   collect(si.multiSpriteImportData);
   collect(si.singleSpriteImportData);
 
-  return { ppu, sprites };
+  // documentAlignment — как pivot привязан к документу Photoshop.
+  // Unity SpriteAlignment:
+  //   0=Center, 1=TopLeft, 2=TopCenter, 3=TopRight, 4=LeftCenter,
+  //   5=RightCenter, 6=BottomLeft, 7=BottomCenter, 8=BottomRight.
+  // Если поля нет — undefined, вызывающий подставит bottom-center.
+  const documentAlignment = (si.documentAlignment !== undefined)
+    ? Number(si.documentAlignment)
+    : undefined;
+
+  return { ppu, sprites, documentAlignment };
 }

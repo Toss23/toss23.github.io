@@ -295,6 +295,23 @@ export async function loadPrefabBoundingBox({
         },
       }));
 
+      // documentAlignment → pivot (доли от левого-низа 0..1).
+      // Fallback — BottomCenter (0.5, 0), типичный для 2D-персонажей.
+      const al = (typeof metaInfo.documentAlignment === "number")
+        ? metaInfo.documentAlignment : 7;
+      let pivotX = 0.5, pivotY = 0.0;
+      switch (al) {
+        case 0: pivotX = 0.5; pivotY = 0.5; break;
+        case 1: pivotX = 0.0; pivotY = 1.0; break;
+        case 2: pivotX = 0.5; pivotY = 1.0; break;
+        case 3: pivotX = 1.0; pivotY = 1.0; break;
+        case 4: pivotX = 0.0; pivotY = 0.5; break;
+        case 5: pivotX = 1.0; pivotY = 0.5; break;
+        case 6: pivotX = 0.0; pivotY = 0.0; break;
+        case 7: pivotX = 0.5; pivotY = 0.0; break;
+        case 8: pivotX = 1.0; pivotY = 0.0; break;
+      }
+
       const result = {
         hasSprite: true,
         minX, minY, maxX, maxY,
@@ -307,6 +324,8 @@ export async function loadPrefabBoundingBox({
         docMinPy: minPy,
         docMaxPy: maxPy,
         atlasSprites,
+        pivotX,
+        pivotY,
       };
 
       if ((kind === "psb" || kind === "psd") && typeof getAssetBytes === "function") {
@@ -392,6 +411,8 @@ export async function loadPrefabBoundingBox({
   let docMinPx = 0, docMaxPx = 0, docMinPy = 0, docMaxPy = 0;
   let docWidthPx = 0, docHeightPx = 0;
   let atlasSprites = null;
+  let pivotX = null;
+  let pivotY = null;
 
   function absorb(cx, cy, hw, hh, color) {
     const x0 = cx - hw, x1 = cx + hw;
@@ -481,6 +502,8 @@ export async function loadPrefabBoundingBox({
         docWidthPx = nested.docWidthPx;
         docHeightPx = nested.docHeightPx;
         atlasSprites = nested.atlasSprites || null;
+        pivotX = (typeof nested.pivotX === "number") ? nested.pivotX : null;
+        pivotY = (typeof nested.pivotY === "number") ? nested.pivotY : null;
       }
     }
   }
@@ -502,6 +525,8 @@ export async function loadPrefabBoundingBox({
     docMinPx, docMaxPx, docMinPy, docMaxPy,
     docWidthPx, docHeightPx,
     atlasSprites,
+    pivotX,
+    pivotY,
     color: firstColor || { r: 1, g: 1, b: 1, a: 1 },
     spriteCount,
   };
