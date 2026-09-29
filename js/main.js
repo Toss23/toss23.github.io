@@ -418,7 +418,6 @@ const mediaOpeners = initMediaOpeners({
   getCurrentFileContent: (p) => getCurrentFileContent(p),
 });
 
-// Загрузка файлов с устройства вынесена в отдельный модуль.
 const uploadFlow = initUploadFlow({
   dialogs,
   progressBar,
