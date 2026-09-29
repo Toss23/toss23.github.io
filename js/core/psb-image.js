@@ -31,6 +31,21 @@ export async function loadPsbImage(bytes, cacheKey) {
 function logHeader(bytes) {
   try {
     if (bytes.length < 26) { console.warn("[psb-image] слишком мало байт:", bytes.length); return; }
+    console.log("[psb-image] byteLength=" + bytes.length,
+      "byteOffset=" + bytes.byteOffset,
+      "bufferSize=" + bytes.buffer.byteLength);
+
+    // Первые 64 байта в hex — по ним видно, что реально в файле.
+    const parts = [];
+    const n = Math.min(64, bytes.length);
+    for (let i = 0; i < n; i++) {
+      const b = bytes[i].toString(16).padStart(2, "0");
+      parts.push(b);
+      if ((i + 1) % 16 === 0) parts.push("\n");
+      else if ((i + 1) % 4 === 0) parts.push(" ");
+    }
+    console.log("[psb-image] первые 64 байта (hex):\n" + parts.join(""));
+
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const sig = view.getUint32(0, false);
     const sigStr = String.fromCharCode((sig >>> 24) & 0xFF, (sig >>> 16) & 0xFF, (sig >>> 8) & 0xFF, sig & 0xFF);
