@@ -10,6 +10,7 @@ import { gitBlobSha, gitBlobShaFromBase64 } from "@core/git-sha.js";
 import { detectEol, toLf, fromLf, base64ToBytes, bytesToBase64 } from "@core/encoding.js";
 import { formatSize } from "@core/format.js";
 import { readPsdInfo, extractPsdThumbnail } from "@core/psd-preview.js";
+import { loadPsbImage } from "@core/psb-image.js";
 
 import { loadToken, saveToken, clearToken, createClient, fetchUser } from "@api/auth.js";
 import {
@@ -2387,15 +2388,13 @@ async function openImage(file) {
 
       if (useFull) {
         try {
-          const { default: Psd } = await import("https://esm.sh/@webtoon/psd@0.4.0");
-          const psdFile = Psd.parse(buf.buffer);
-          const compositeBuffer = await psdFile.composite();
-          const imageData = new ImageData(compositeBuffer, psdFile.width, psdFile.height);
+          const bitmap = await loadPsbImage(buf, file.path);
+          if (!bitmap) throw new Error("Декодирование не удалось");
           const canvas = document.createElement("canvas");
-          canvas.width = psdFile.width;
-          canvas.height = psdFile.height;
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
           const ctx = canvas.getContext("2d");
-          ctx.putImageData(imageData, 0, 0);
+          ctx.drawImage(bitmap, 0, 0);
           blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
           if (!blob) throw new Error("Canvas toBlob failed");
         } catch (e) {
