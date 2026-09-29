@@ -1,5 +1,5 @@
-import { getBranchHeadSha, getBlobBySha, listFiles } from "@api/github.js";
-import { toLf } from "@core/encoding.js";
+import { getBranchHeadSha, getBlobRaw, listFiles } from "@api/github.js";
+import { toLf, isProbablyText, bytesToBase64 } from "@core/encoding.js";
 
 export async function cloneRepo(octokit, { owner, name, branch, onProgress }) {
   const headSha = await getBranchHeadSha(octokit, owner, name, branch);
@@ -16,14 +16,35 @@ export async function cloneRepo(octokit, { owner, name, branch, onProgress }) {
       const entry = queue.shift();
       if (!entry) break;
       try {
-        const content = await getBlobBySha(octokit, owner, name, entry.sha);
+        // Читаем blob как байты (без декодирования в UTF-8).
+        // TextDecoder заменяет невалидные UTF-8 последовательности на
+        // U+FFFD, и бинарники портятся. Поэтому:
+        //   - текстовые файлы → декодируем в строку (как раньше)
+        //   - бинарные      → сохраняем как base64 + isBinary: true,
+        //                     читаем их потом через base64ToBytes.
+        const blob = await getBlobRaw(octokit, owner, name, entry.sha);
+        const buf = await blob.arrayBuffer();
+        const raw = new Uint8Array(buf);
+        const isBinary = !isProbablyText(raw);
+
+        let content;
+        let baseContentLf;
+        if (isBinary) {
+          content = bytesToBase64(raw);
+          baseContentLf = "";
+        } else {
+          content = new TextDecoder("utf-8", { ignoreBOM: true }).decode(raw);
+          baseContentLf = toLf(content);
+        }
+
         files.push({
           path: entry.path,
           sha: entry.sha,
           baseSha: entry.sha,
           size: entry.size || 0,
           content,
-          baseContentLf: toLf(content),
+          baseContentLf,
+          isBinary,
         });
       } catch (e) {
         console.warn("skip", entry.path, e.message);
