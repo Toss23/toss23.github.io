@@ -166,24 +166,82 @@ export function initUnitySceneScreen() {
     return step * pow;
   }
 
-  // Диагностический режим: рисуем всю картинку целиком, без вырезки.
-  // Так видно, что в ней есть и где она реально начинается.
+  // Рисует атлас как набор отдельных спрайтов. Каждый спрайт берётся
+  // из своей области в атласе (rect) и рисуется в своей позиции на холсте
+  // Photoshop-документа (spritePosition). Это воссоздаёт то, как Unity
+  // собирает персонажа из кусочков PSB-атласа.
   function drawBitmap(g, bx, by, wPx, hPx, isSel) {
     const srcW = g.bitmap.width;
     const srcH = g.bitmap.height;
+    const ppu = g.bitmapPPU || 100;
+    const sprites = g.atlasSprites;
 
-    console.log("[draw-bitmap]", g.name,
-      "src=" + srcW + "×" + srcH,
-      "dstPx=" + wPx.toFixed(0) + "×" + hPx.toFixed(0),
-      "doc=" + g.docWidthPx + "×" + g.docHeightPx,
-      "crop=" + g.docMinPx + "," + g.docMinPy + "→" + g.docMaxPx + "," + g.docMaxPy);
+    // Если спрайтов нет или один — просто рисуем картинку целиком.
+    if (!Array.isArray(sprites) || sprites.length <= 1) {
+      try {
+        ctx.drawImage(g.bitmap, 0, 0, srcW, srcH, bx, by, wPx, hPx);
+      } catch (e) {
+        ctx.strokeStyle = "#f48771";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bx, by, wPx, hPx);
+      }
+      if (isSel) {
+        ctx.strokeStyle = "#ffb454";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, wPx, hPx);
+      }
+      if (view.scale > 8 || isSel) {
+        ctx.fillStyle = isSel ? "#fff" : "#999";
+        ctx.font = "11px ui-monospace, monospace";
+        ctx.fillText(g.name, bx + 6, by - 4);
+      }
+      return;
+    }
 
-    try {
-      ctx.drawImage(g.bitmap, 0, 0, srcW, srcH, bx, by, wPx, hPx);
-    } catch (e) {
-      ctx.strokeStyle = "#f48771";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(bx, by, wPx, hPx);
+    // Границы документа в единицах.
+    const docMinXU = g.docMinPx / ppu;
+    const docMaxXU = g.docMaxPx / ppu;
+    const docMinYU = g.docMinPy / ppu;
+    const docMaxYU = g.docMaxPy / ppu;
+    const docWU = docMaxXU - docMinXU || 1;
+    const docHU = docMaxYU - docMinYU || 1;
+
+    const scaleX = wPx / docWU;
+    const scaleY = hPx / docHU;
+
+    // Рисуем от «задних» к «передним». В .meta порядок — примерно
+    // от верхнего слоя (детали) к нижнему (основа), так что реверсируем.
+    for (let i = sprites.length - 1; i >= 0; i--) {
+      const s = sprites[i];
+      const spriteWU = s.rect.w / ppu;
+      const spriteHU = s.rect.h / ppu;
+      const centerXU = s.pos.x / ppu;
+      const centerYU = s.pos.y / ppu;
+
+      // Левый верхний угол спрайта в системе документа (Y снизу вверх).
+      const leftU = centerXU - spriteWU / 2;
+      const topU = centerYU + spriteHU / 2;
+
+      // Экранные координаты: от левого верхнего угла bbox.
+      const screenX = bx + (leftU - docMinXU) * scaleX;
+      const screenY = by + (docMaxYU - topU) * scaleY;
+      const screenW = spriteWU * scaleX;
+      const screenH = spriteHU * scaleY;
+
+      if (screenW <= 0 || screenH <= 0) continue;
+      // Отсекаем спрайты, целиком ушедшие за пределы bbox.
+      if (screenX + screenW < bx || screenX > bx + wPx) continue;
+      if (screenY + screenH < by || screenY > by + hPx) continue;
+
+      try {
+        ctx.drawImage(
+          g.bitmap,
+          s.rect.x, s.rect.y, s.rect.w, s.rect.h,
+          screenX, screenY, screenW, screenH
+        );
+      } catch (e) {
+        // Битый спрайт — пропускаем, не роняем всю отрисовку.
+      }
     }
 
     if (isSel) {
@@ -191,7 +249,6 @@ export function initUnitySceneScreen() {
       ctx.lineWidth = 2;
       ctx.strokeRect(bx, by, wPx, hPx);
     }
-
     if (view.scale > 8 || isSel) {
       ctx.fillStyle = isSel ? "#fff" : "#999";
       ctx.font = "11px ui-monospace, monospace";
@@ -381,12 +438,14 @@ export function initUnitySceneScreen() {
         pi.bitmap = info.bitmap || null;
         pi.bitmapW = info.imageWidth || (info.bitmap ? info.bitmap.width : 0);
         pi.bitmapH = info.imageHeight || (info.bitmap ? info.bitmap.height : 0);
+        pi.bitmapPPU = info.imagePPU || 100;
         pi.docMinPx = info.docMinPx || 0;
         pi.docMaxPx = info.docMaxPx || 0;
         pi.docMinPy = info.docMinPy || 0;
         pi.docMaxPy = info.docMaxPy || 0;
         pi.docWidthPx = info.docWidthPx || 0;
         pi.docHeightPx = info.docHeightPx || 0;
+        pi.atlasSprites = info.atlasSprites || null;
 
         console.log(
           "[unity-scene] применил:", pi.name,
@@ -394,7 +453,7 @@ export function initUnitySceneScreen() {
           "size=" + pi.sizeX.toFixed(2) + "×" + pi.sizeY.toFixed(2),
           "scale=" + pi.localScale.x + "," + pi.localScale.y,
           "bitmap=" + pi.bitmapW + "×" + pi.bitmapH,
-          "doc=" + pi.docWidthPx + "×" + pi.docHeightPx
+          "спрайтов=" + (pi.atlasSprites ? pi.atlasSprites.length : 0)
         );
       }
 

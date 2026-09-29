@@ -280,6 +280,21 @@ export async function loadPrefabBoundingBox({
         "· пиксели:", (maxPx - minPx).toFixed(0), "×", (maxPy - minPy).toFixed(0)
       );
 
+      // Готовим спрайты атласа: rect — область в атласе,
+      // spritePosition — центр в документе Photoshop, размеры — в пикселях.
+      const atlasSprites = metaInfo.sprites.map((s) => ({
+        rect: {
+          x: s.rect.x,
+          y: s.rect.y,
+          w: s.rect.width,
+          h: s.rect.height,
+        },
+        pos: {
+          x: s.centerX,
+          y: s.centerY,
+        },
+      }));
+
       const result = {
         hasSprite: true,
         minX, minY, maxX, maxY,
@@ -287,12 +302,11 @@ export async function loadPrefabBoundingBox({
         spriteCount: metaInfo.sprites.length,
         imagePath: prefabPath,
         imagePPU: ppu,
-        // Пиксельные границы области спрайтов в документе Photoshop.
-        // Нужны, чтобы вырезать нужную часть из PSB-картинки.
         docMinPx: minPx,
         docMaxPx: maxPx,
         docMinPy: minPy,
         docMaxPy: maxPy,
+        atlasSprites,
       };
 
       if ((kind === "psb" || kind === "psd") && typeof getAssetBytes === "function") {
@@ -377,6 +391,7 @@ export async function loadPrefabBoundingBox({
   let imageHeight = 0;
   let docMinPx = 0, docMaxPx = 0, docMinPy = 0, docMaxPy = 0;
   let docWidthPx = 0, docHeightPx = 0;
+  let atlasSprites = null;
 
   function absorb(cx, cy, hw, hh, color) {
     const x0 = cx - hw, x1 = cx + hw;
@@ -465,6 +480,7 @@ export async function loadPrefabBoundingBox({
         docMaxPy = nested.docMaxPy;
         docWidthPx = nested.docWidthPx;
         docHeightPx = nested.docHeightPx;
+        atlasSprites = nested.atlasSprites || null;
       }
     }
   }
@@ -482,6 +498,7 @@ export async function loadPrefabBoundingBox({
     imageHeight,
     docMinPx, docMaxPx, docMinPy, docMaxPy,
     docWidthPx, docHeightPx,
+    atlasSprites,
     color: firstColor || { r: 1, g: 1, b: 1, a: 1 },
     spriteCount,
   };
