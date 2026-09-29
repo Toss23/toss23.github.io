@@ -359,14 +359,15 @@ export function initUnitySceneScreen() {
         if (!info) continue;
         const w = Math.max(0.001, info.maxX - info.minX);
         const h = Math.max(0.001, info.maxY - info.minY);
-        const cx = (info.minX + info.maxX) / 2;
-        const cy = (info.minY + info.maxY) / 2;
         pi.hasSprite = true;
         pi.spriteColor = info.color || { r: 1, g: 1, b: 1, a: 1 };
         pi.sizeX = Math.abs(w * pi.localScale.x);
         pi.sizeY = Math.abs(h * pi.localScale.y);
-        pi.worldX = pi.localPos.x + cx * pi.localScale.x;
-        pi.worldY = pi.localPos.y + cy * pi.localScale.y;
+        // Центр картинки = localPos префаб-инстанса.
+        // cx/cy из PSB — координаты bbox внутри документа Photoshop,
+        // они не относятся к origin GameObject'а и прибавлять их нельзя.
+        pi.worldX = pi.localPos.x;
+        pi.worldY = pi.localPos.y;
 
         pi.bitmap = info.bitmap || null;
         pi.bitmapW = info.imageWidth || (info.bitmap ? info.bitmap.width : 0);
@@ -382,11 +383,11 @@ export function initUnitySceneScreen() {
 
         console.log(
           "[unity-scene] применил:", pi.name,
-          "pos=" + pi.worldX.toFixed(2) + "," + pi.worldY.toFixed(2),
+          "localPos=" + pi.localPos.x.toFixed(2) + "," + pi.localPos.y.toFixed(2),
+          "world=" + pi.worldX.toFixed(2) + "," + pi.worldY.toFixed(2),
           "size=" + pi.sizeX.toFixed(2) + "×" + pi.sizeY.toFixed(2),
           "scale=" + pi.localScale.x + "," + pi.localScale.y,
-          "bitmap=" + pi.bitmapW + "×" + pi.bitmapH,
-          "спрайтов=" + (pi.atlasSprites ? pi.atlasSprites.length : 0)
+          "bitmap=" + pi.bitmapW + "×" + pi.bitmapH
         );
       }
 
