@@ -3,7 +3,6 @@ import { formatSize } from "@core/format.js";
 import { attachBackdropDismiss } from "@ui/modal-dismiss.js";
 import { findUnityCacheKeys, clearUnityCache } from "@core/unity-cache.js";
 import { showBusy, hideBusy } from "@ui/busy.js";
-import { showBusy, hideBusy } from "@ui/busy.js";
 
 export function initRepoActionsModal({
   onOpenRemote, onOpenLocal, onClone, onDeleteLocal, onDownloadZip, dialogs,
