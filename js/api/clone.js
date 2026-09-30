@@ -16,12 +16,9 @@ export async function cloneRepo(octokit, { owner, name, branch, onProgress }) {
       const entry = queue.shift();
       if (!entry) break;
       try {
-        // Читаем blob как байты (без декодирования в UTF-8).
-        // TextDecoder заменяет невалидные UTF-8 последовательности на
-        // U+FFFD, и бинарники портятся. Поэтому:
-        //   - текстовые файлы → декодируем в строку (как раньше)
-        //   - бинарные      → сохраняем как base64 + isBinary: true,
-        //                     читаем их потом через base64ToBytes.
+        // Читаем blob как байты (getBlobRaw возвращает Blob,
+        // не декодируя в UTF-8 — иначе невалидные последовательности
+        // заменяются на U+FFFD, и бинарные файлы портятся).
         const blob = await getBlobRaw(octokit, owner, name, entry.sha);
         const buf = await blob.arrayBuffer();
         const raw = new Uint8Array(buf);
@@ -59,8 +56,6 @@ export async function cloneRepo(octokit, { owner, name, branch, onProgress }) {
 
   return { headSha, files, totalBytes };
 }
-
-
 
 export async function checkRemoteHead(octokit, { owner, name, branch }) {
   return getBranchHeadSha(octokit, owner, name, branch);
