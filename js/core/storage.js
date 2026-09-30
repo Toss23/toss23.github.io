@@ -69,11 +69,13 @@ export async function saveRepo(meta, files, { onProgress } = {}) {
     onProgress?.(Math.min(i + slice.length, total), total);
   }
 
-  // Индекс файлов
+  // Индекс файлов. isBinary сохраняем, чтобы UI и логика чтения
+  // знали тип файла без обращения к полной записи.
   const filesIndex = files.map((f) => ({
     path: f.path,
     sha: f.sha,
     baseSha: f.baseSha ?? f.sha,
+    isBinary: !!f.isBinary,
     size: f.size ?? byteLength(f.content),
   }));
   await set(PREFIX_FILES_INDEX + key, filesIndex);
