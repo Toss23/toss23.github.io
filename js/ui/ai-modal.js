@@ -43,7 +43,8 @@ export function initAiModal({ onLoadJson, onApply, onGenerateMap, onGenerateFull
     // Прячем основную AI-панель, чтобы не было двух подложек друг под другом.
     if (modal) modal.classList.add("hidden");
     pasteModal.classList.remove("hidden");
-    setTimeout(() => pasteTextarea.focus(), 50);
+    // Не фокусируем textarea автоматически: на мобильных это сразу
+    // открывает экранную клавиатуру и перекрывает половину интерфейса.
   }
 
   function closePaste() {

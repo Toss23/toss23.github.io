@@ -63,6 +63,7 @@ import { initCommitScreen } from "@screens/commit-screen.js";
 
 import { SCREENS, isImagePath, isAudioPath, isUnityScenePath, APP_REPO } from "@core/config.js";
 import * as storage from "@core/storage.js";
+import { clearUnityCache } from "@core/unity-cache.js";
 import { getEditorAutosave } from "@core/settings.js";
 
 /* ---------- Утилиты ---------- */
@@ -1295,6 +1296,8 @@ async function deleteLocalCopy(repo) {
   progressBar.showIndeterminate("Удаление локальной копии...");
   try {
     await new Promise((r) => setTimeout(r, 120));
+    // Удаление локальной копии — автоматически чистим её Unity-кэш.
+    try { await clearUnityCache(repo.owner.login, repo.name); } catch (e) { console.warn("unity cache:", e); }
     await storage.deleteRepo(key);
 
     const clonedMap = new Map(getState().clonedMap);

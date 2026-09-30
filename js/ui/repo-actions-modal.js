@@ -2,6 +2,8 @@ import { $ } from "@core/dom.js";
 import { formatSize } from "@core/format.js";
 import { attachBackdropDismiss } from "@ui/modal-dismiss.js";
 import { findUnityCacheKeys, clearUnityCache } from "@core/unity-cache.js";
+import { showBusy, hideBusy } from "@ui/busy.js";
+import { showBusy, hideBusy } from "@ui/busy.js";
 
 export function initRepoActionsModal({
   onOpenRemote, onOpenLocal, onClone, onDeleteLocal, onDownloadZip, dialogs,
@@ -41,7 +43,8 @@ export function initRepoActionsModal({
   async function onClearCacheClick() {
     if (!current) return;
     const repo = current;
-    modal.classList.add("hidden");
+    // Модалку НЕ закрываем — оставляем под оверлеем, чтобы после
+    // завершения пользователь вернулся к тому же списку действий.
     const ok = await dialogs.confirm({
       title: "Очистить кэш Unity?",
       text:
@@ -53,8 +56,19 @@ export function initRepoActionsModal({
       danger: true,
     });
     if (!ok) return;
-    const removed = await clearUnityCache(repo.owner.login, repo.name);
-    console.log("[unity-cache] удалено ключей:", removed, "для", repo.full_name);
+
+    const token = showBusy("Очистка кэша Unity…");
+    try {
+      const removed = await clearUnityCache(repo.owner.login, repo.name);
+      console.log("[unity-cache] удалено ключей:", removed, "для", repo.full_name);
+      // Кэша больше нет — прячем кнопку.
+      if (clearCacheBtn) {
+        clearCacheBtn.textContent = "🧹 Очистить кэш Unity";
+        clearCacheBtn.classList.add("hidden");
+      }
+    } finally {
+      hideBusy(token);
+    }
   }
 
   btnRemote.addEventListener("click", () => {

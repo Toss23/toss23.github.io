@@ -499,6 +499,17 @@ export function initUnitySceneScreen() {
     draw();
   }
 
+  // Снимает выделение: инспектор закрывается, точка на объекте исчезает.
+  // Не делает ничего, если объект и так не выбран.
+  function deselectAll() {
+    if (!selectedFileID) return;
+    selectedFileID = null;
+    if (inspectorPanel) inspectorPanel.classList.add("closed");
+    renderHierarchy();
+    renderInspector();
+    draw();
+  }
+
   const SKIP_FIELDS = new Set([
     "m_ObjectHideFlags",
     "m_CorrespondingSourceObject",
@@ -907,6 +918,7 @@ export function initUnitySceneScreen() {
       const my = e.clientY - rect.top;
       const hit = hitTest(mx, my);
       if (hit) selectNode(hit.fileID);
+      else deselectAll();
     });
 
     let touchStart = null;
@@ -952,6 +964,7 @@ export function initUnitySceneScreen() {
         const rect = canvasEl.getBoundingClientRect();
         const hit = hitTest(touch.clientX - rect.left, touch.clientY - rect.top);
         if (hit) selectNode(hit.fileID);
+        else deselectAll();
       }
       touchStart = null;
     }, { passive: true });
