@@ -5,12 +5,12 @@
 //
 // Модель: дерево GameObject'ов, мировые координаты XY (для 2D),
 // размеры из SpriteRenderer и Canvas, признаки отрисовки на сцене.
+//
+// Для каждого документа сохраняются offsets bodyText в исходном тексте:
+// это позволяет делать точечные замены полей без пересборки всего YAML.
 
 import yaml from "https://esm.sh/js-yaml@4";
 
-// Заголовок документа. Может оканчиваться на " stripped" — так Unity
-// помечает компоненты, заимствованные из вложенного префаба. Их структура
-// урезана, но они нужны как связующие ссылки в иерархии.
 const UNITY_TAG_RE = /^---\s+!u!(\d+)\s+&(\d+)(\s+stripped)?\s*$/;
 
 const CLASS_GAMEOBJECT = 1;
@@ -52,26 +52,44 @@ const CLASS_NAMES = {
   1660057539: "Scene Roots",
 };
 
+// Разбивает текст на документы и запоминает смещения bodyText.
 function splitDocuments(text) {
+  const src = String(text || "");
   const docs = [];
   let current = null;
-  const lines = String(text || "").split(/\r?\n/);
-  for (const line of lines) {
-    if (/^%YAML\s/.test(line) || /^%TAG\s/.test(line)) continue;
+  let bodyStart = 0;
+  const n = src.length;
+  let i = 0;
+  while (i < n) {
+    let eol = src.indexOf("\n", i);
+    if (eol < 0) eol = n;
+    const line = src.slice(i, eol);
+    if (/^%YAML\s/.test(line) || /^%TAG\s/.test(line)) {
+      i = eol + 1;
+      continue;
+    }
     const m = line.match(UNITY_TAG_RE);
     if (m) {
-      if (current) docs.push(current);
+      if (current) {
+        current.bodyText = src.slice(bodyStart, i);
+        current.bodyEnd = i;
+        docs.push(current);
+      }
       current = {
         classID: parseInt(m[1], 10),
         fileID: m[2],
         stripped: !!m[3],
-        body: [],
+        bodyStart: eol + 1,
       };
-      continue;
+      bodyStart = eol + 1;
     }
-    if (current) current.body.push(line);
+    i = eol + 1;
   }
-  if (current) docs.push(current);
+  if (current) {
+    current.bodyText = src.slice(bodyStart, n);
+    current.bodyEnd = n;
+    docs.push(current);
+  }
   return docs;
 }
 
@@ -81,11 +99,19 @@ export function parseUnityYaml(text) {
   for (const r of raw) {
     let data = null;
     try {
-      data = yaml.load(r.body.join("\n"));
+      data = yaml.load(r.bodyText);
     } catch (e) {
       data = null;
     }
-    docs.push({ classID: r.classID, fileID: r.fileID, stripped: !!r.stripped, data });
+    docs.push({
+      classID: r.classID,
+      fileID: r.fileID,
+      stripped: !!r.stripped,
+      data,
+      bodyText: r.bodyText,
+      bodyStart: r.bodyStart,
+      bodyEnd: r.bodyEnd,
+    });
   }
   return docs;
 }
@@ -166,7 +192,7 @@ export function buildSceneModel(docs) {
     nodeByFileId.set(node.fileID, node);
   }
 
-  // --- 2. PrefabInstance — имя, позиция, масштаб из m_Modifications
+  // --- 2. PrefabInstance
   for (const d of docs) {
     if (d.classID !== CLASS_PREFAB_INSTANCE) continue;
     const pi = d.data && d.data.PrefabInstance;
@@ -221,7 +247,7 @@ export function buildSceneModel(docs) {
     if (t.m_LocalScale) node.localScale = num3(t.m_LocalScale);
   }
 
-  // --- 4. Размеры и признак отрисовки
+  // --- 4. Размеры
   for (const node of nodes) {
     if (node.isPrefabInstance) continue;
     let spriteW = null, spriteH = null, color = null;
@@ -238,7 +264,6 @@ export function buildSceneModel(docs) {
         if (sr.m_Size) {
           const sw = Math.abs(toNum(sr.m_Size.x, 1) * node.localScale.x);
           const sh = Math.abs(toNum(sr.m_Size.y, 1) * node.localScale.y);
-          // Объединяем габариты всех спрайтов: берём максимум.
           if (spriteW === null || sw > spriteW) spriteW = sw;
           if (spriteH === null || sh > spriteH) spriteH = sh;
         }
@@ -314,7 +339,7 @@ export function buildSceneModel(docs) {
     if (node.parent) node.parent.children.push(node);
   }
 
-  // --- 6. Мировые координаты XY
+  // --- 6. Мировые координаты
   for (const node of nodes) {
     let x = 0, y = 0, cur = node;
     while (cur) {

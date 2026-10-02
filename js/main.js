@@ -2604,8 +2604,17 @@ async function openUnityScene(file) {
       getContent: (p) => getCurrentFileContent(p),
       getAssetBytes: (p) => readUnityAssetBytes(p),
     };
+    const onEdit = async (newText) => {
+      setDirty(file.path, newText);
+      if (mode === "local" && cloned) {
+        try { await saveFileToLocal(file.path, newText); }
+        catch (e) { console.warn("scene autosave:", e); }
+      }
+      renderFiles();
+      renderTabs();
+    };
     setState({ openFile: { path: file.path } });
-    unitySceneScreen.open(file.path, content, context);
+    unitySceneScreen.open(file.path, content, context, onEdit);
     setScreen(SCREENS.UNITY_SCENE);
     setStatus("");
   } catch (e) {

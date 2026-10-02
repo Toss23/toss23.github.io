@@ -2,6 +2,10 @@ import { $ } from "@core/dom.js";
 import { parseUnityYaml, buildSceneModel, classDisplayName } from "@api/unity-yaml.js";
 import { getPrefabMap, loadPrefabBoundingBox } from "@api/unity-prefabs.js";
 import { showBusy, hideBusy, updateBusyText } from "@ui/busy.js";
+import {
+  getWhitelist, isEditableFieldType,
+  serializeYamlValue, replaceFieldValue, ALWAYS_HIDDEN,
+} from "@api/unity-inspector-fields.js";
 
 // Read-only просмотр сцены Unity.
 // Иерархия сверху (сворачиваемая, ~5 строк со скроллом), 2D-вид XY
@@ -25,6 +29,8 @@ export function initUnitySceneScreen() {
   let hierarchyToggleBtn = null;
   let inspectorCloseButton = null;
   let generation = 0;
+  let sceneText = "";
+  let onEdit = null;
 
   function injectStyles() {
     if (document.getElementById("unity-scene-styles")) return;
@@ -41,6 +47,10 @@ export function initUnitySceneScreen() {
       ".unity-hierarchy.collapsed .unity-tree{display:none;}",
       ".unity-hierarchy .unity-tree{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;}",
       ".unity-inspector.closed{display:none !important;}",
+      ".unity-field-input{background:#1e1e1e;color:#ddd;border:1px solid #3c3c3c;border-radius:3px;padding:2px 6px;font-size:11.5px;font-family:inherit;box-sizing:border-box;width:100%;}",
+      ".unity-field-input:focus{border-color:#0e639c;outline:none;}",
+      ".unity-vec-input{background:#1a1a1a;color:#b5cea8;border:1px solid #333;border-radius:3px;padding:1px 4px;font-size:11.5px;font-family:inherit;box-sizing:border-box;width:54px;text-align:right;}",
+      ".unity-vec-input:focus{border-color:#0e639c;outline:none;}",
     ].join("");
     document.head.appendChild(style);
   }
@@ -510,6 +520,65 @@ export function initUnitySceneScreen() {
     draw();
   }
 
+  // Применяет правку поля: заменяет значение в sceneText, обновляет
+  // модель без полного перепарсинга (чтобы сохранить закэшированные
+  // bitmap'ы префабов) и уведомляет владельца экрана.
+  function applyEdit(componentFileID, fieldKey, newValue, valueType) {
+    const docs = parseUnityYaml(sceneText);
+    const doc = docs.find((d) => String(d.fileID) === String(componentFileID));
+    if (!doc) return;
+    const yamlValue = serializeYamlValue(newValue, valueType);
+    const newBody = replaceFieldValue(doc.bodyText, fieldKey, yamlValue);
+    if (newBody === doc.bodyText) {
+      console.warn("[unity-scene] поле не найдено в YAML:", fieldKey);
+      return;
+    }
+    sceneText = sceneText.slice(0, doc.bodyStart) + newBody + sceneText.slice(doc.bodyEnd);
+
+    // Обновляем модель in-place — без buildSceneModel,
+    // чтобы не потерять закэшированные bitmap'ы префабов.
+    const mdoc = model.byFileId.get(String(componentFileID));
+    if (mdoc && mdoc.data) {
+      const key = Object.keys(mdoc.data)[0];
+      const inner = mdoc.data[key];
+      if (inner && typeof inner === "object") {
+        if (valueType === "vec2" || valueType === "vec3") {
+          if (!inner[fieldKey]) inner[fieldKey] = {};
+          for (const [k, v] of Object.entries(newValue)) inner[fieldKey][k] = v;
+        } else {
+          inner[fieldKey] = newValue;
+        }
+      }
+    }
+
+    // Обновляем кэш на узлах сцены.
+    for (const n of model.gameObjects) {
+      if (n.fileID === String(componentFileID)) {
+        if (fieldKey === "m_Name") n.name = String(newValue);
+        if (fieldKey === "m_IsActive") n.active = newValue !== 0 && newValue !== false;
+      }
+      if (n.transformId === String(componentFileID)) {
+        if (fieldKey === "m_LocalPosition") {
+          n.localPos = { x: newValue.x || 0, y: newValue.y || 0, z: newValue.z || 0 };
+        }
+        if (fieldKey === "m_LocalScale") {
+          n.localScale = { x: newValue.x || 1, y: newValue.y || 1, z: newValue.z || 1 };
+        }
+      }
+    }
+    // Пересчёт мировых координат.
+    for (const n of model.gameObjects) {
+      let x = 0, y = 0, cur = n;
+      while (cur) { x += cur.localPos.x; y += cur.localPos.y; cur = cur.parent; }
+      n.worldX = x;
+      n.worldY = y;
+    }
+
+    try { if (onEdit) onEdit(sceneText); } catch (e) { console.warn("onEdit:", e); }
+    draw();
+    if (fieldKey === "m_Name") renderHierarchy();
+  }
+
   const SKIP_FIELDS = new Set([
     "m_ObjectHideFlags",
     "m_CorrespondingSourceObject",
@@ -672,6 +741,19 @@ export function initUnitySceneScreen() {
     return row;
   }
 
+  // Тип поля по значению (для MonoBehaviour и неизвестных классов).
+  function inferFieldType(value) {
+    if (typeof value === "boolean") return "boolean";
+    if (typeof value === "number") return "number";
+    if (typeof value === "string") return "string";
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const ks = Object.keys(value);
+      if (ks.length === 2 && ks.includes("x") && ks.includes("y")) return "vec2";
+      if (ks.length === 3 && ks.includes("x") && ks.includes("y") && ks.includes("z")) return "vec3";
+    }
+    return null;
+  }
+
   function renderComponent(doc) {
     const wrap = document.createElement("details");
     wrap.className = "unity-component";
@@ -686,16 +768,140 @@ export function initUnitySceneScreen() {
     body.className = "unity-component-body";
     const keys = Object.keys(doc.data || {});
     const inner = keys.length ? doc.data[keys[0]] : doc.data;
-    if (inner && typeof inner === "object") {
-      renderFieldsGui(inner, body, 0);
-    } else {
+    if (!inner || typeof inner !== "object") {
       const row = document.createElement("div");
       row.className = "unity-field";
       row.textContent = String(inner);
       body.appendChild(row);
+      wrap.appendChild(body);
+      return wrap;
     }
+
+    const wl = getWhitelist(doc.classID);
+    if (wl) {
+      const shown = new Set();
+      for (const f of wl) {
+        if (!(f.key in inner)) continue;
+        shown.add(f.key);
+        body.appendChild(renderEditableField(doc, f, inner[f.key]));
+      }
+      const extra = Object.keys(inner).filter((k) => !shown.has(k) && !ALWAYS_HIDDEN.has(k));
+      if (extra.length) body.appendChild(renderServiceFields(inner, extra));
+    } else {
+      // MonoBehaviour и неизвестные классы — все поля, редактируем
+      // если тип распознан, иначе readonly.
+      for (const k of Object.keys(inner)) {
+        if (ALWAYS_HIDDEN.has(k)) continue;
+        const val = inner[k];
+        const inferred = inferFieldType(val);
+        if (inferred && isEditableFieldType(inferred)) {
+          body.appendChild(renderEditableField(doc, { key: k, label: prettyName(k), type: inferred }, val));
+        } else {
+          body.appendChild(renderField(k, val, 0));
+        }
+      }
+    }
+
     wrap.appendChild(body);
     return wrap;
+  }
+
+  function renderEditableField(doc, field, currentValue) {
+    const row = document.createElement("div");
+    row.className = "unity-field";
+
+    const label = document.createElement("div");
+    label.className = "unity-field-label";
+    label.textContent = field.label || prettyName(field.key);
+    label.title = field.key;
+    row.appendChild(label);
+
+    const control = document.createElement("div");
+    control.className = "unity-field-control";
+
+    const type = field.type;
+    if (field.readonly || !isEditableFieldType(type)) {
+      // Reuse существующий рендер — он умеет всё: vec, color, ref, объекты.
+      const sub = renderField(field.key, currentValue, 0);
+      // Подменяем лейбл на наш (с правильным названием), но оставляем control.
+      const subLabel = sub.querySelector(".unity-field-label");
+      if (subLabel) subLabel.textContent = label.textContent;
+      return sub;
+    }
+
+    if (type === "boolean") {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = currentValue !== 0 && currentValue !== false;
+      cb.addEventListener("change", () => applyEdit(doc.fileID, field.key, cb.checked, "boolean"));
+      control.appendChild(cb);
+    } else if (type === "string") {
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.value = currentValue == null ? "" : String(currentValue);
+      inp.className = "unity-field-input";
+      inp.addEventListener("change", () => applyEdit(doc.fileID, field.key, inp.value, "string"));
+      control.appendChild(inp);
+    } else if (type === "number" || type === "int") {
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.step = type === "int" ? "1" : "any";
+      inp.value = String(currentValue);
+      inp.className = "unity-field-input";
+      inp.addEventListener("change", () => {
+        const n = Number(inp.value);
+        if (Number.isFinite(n)) applyEdit(doc.fileID, field.key, n, type);
+      });
+      control.appendChild(inp);
+    } else if (type === "vec2" || type === "vec3") {
+      const axes = type === "vec2" ? ["x", "y"] : ["x", "y", "z"];
+      const vec = document.createElement("div");
+      vec.className = "unity-vec";
+      const inputs = {};
+      for (const a of axes) {
+        const cell = document.createElement("div");
+        cell.className = "unity-vec-field";
+        const kEl = document.createElement("span");
+        kEl.className = "unity-vec-key";
+        kEl.textContent = a.toUpperCase();
+        cell.appendChild(kEl);
+        const inp = document.createElement("input");
+        inp.type = "number";
+        inp.step = "any";
+        inp.value = fmtNum(currentValue && currentValue[a]);
+        inp.className = "unity-vec-input";
+        cell.appendChild(inp);
+        inputs[a] = inp;
+        vec.appendChild(cell);
+      }
+      const commit = () => {
+        const v = {};
+        for (const a of axes) {
+          const n = Number(inputs[a].value);
+          v[a] = Number.isFinite(n) ? n : 0;
+        }
+        applyEdit(doc.fileID, field.key, v, type);
+      };
+      for (const a of axes) inputs[a].addEventListener("change", commit);
+      control.appendChild(vec);
+    }
+
+    row.appendChild(control);
+    return row;
+  }
+
+  function renderServiceFields(inner, keys) {
+    const details = document.createElement("details");
+    details.className = "unity-subfields";
+    const sum = document.createElement("summary");
+    sum.className = "unity-subfields-summary";
+    sum.textContent = "Служебные поля (" + keys.length + ")";
+    details.appendChild(sum);
+    const body = document.createElement("div");
+    body.className = "unity-subfields-body";
+    for (const k of keys) body.appendChild(renderField(k, inner[k], 0));
+    details.appendChild(body);
+    return details;
   }
 
   function renderFieldsGui(obj, parent, depth) {
@@ -990,8 +1196,10 @@ export function initUnitySceneScreen() {
   }
 
   return {
-    open(path, text, context) {
+    open(path, text, context, onEditCb) {
       if (pathEl) pathEl.textContent = path;
+      sceneText = text;
+      onEdit = onEditCb || null;
       injectStyles();
       ensureHierarchyToggle();
       ensureInspectorClose();
