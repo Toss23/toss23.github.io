@@ -4,6 +4,7 @@ import { gitBlobSha } from "@core/git-sha.js";
 import { fromLf } from "@core/encoding.js";
 import { tokenize, renderTokens, renderPlain, findBracketPair } from "@core/csharp-highlight.js";
 import { getEditorTabSize, getEditorAutosave, getEditorBracketHighlight, getEditorWordWrap } from "@core/settings.js";
+import { initEditorAutocomplete } from "@ui/editor-autocomplete.js";
 
 function isCSharpPath(path) {
   return typeof path === "string" && /\.cs$/i.test(path);
@@ -32,6 +33,8 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
   if (!textarea || !highlight || !codeEl) {
     console.error("editor-screen: не найдены #file-content или #file-highlight");
   }
+
+  const autocomplete = initEditorAutocomplete({ textarea });
 
   let base = null;
   let savedLf = null;
@@ -335,6 +338,9 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
   /* ---------- keydown: Tab, Enter, undo/redo, "}" ---------- */
 
   function handleKeydown(e) {
+    // Подсказка автодополнения: Tab принимает слово, Escape закрывает.
+    if (autocomplete && autocomplete.handleKey(e)) return;
+
     if (!textarea || textarea.disabled || !base) return;
 
     if (e.ctrlKey || e.metaKey) {
@@ -479,6 +485,7 @@ export function initEditorScreen({ onStateChange, onSave, onRevert, onAutosave, 
 
   function setContent(text, disabled) {
     if (!textarea) return;
+    autocomplete?.hide();
     textarea.value = text;
     textarea.disabled = !!disabled;
     textarea.scrollTop = 0;

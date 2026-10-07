@@ -566,6 +566,35 @@ body {
 }
 #file-editor .editor-highlight::-webkit-scrollbar { display: none; }
 
+/* Inline ghost-подсказка автодополнения. */
+#editor-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: #5a5f6a;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: pre;
+  z-index: 3;
+  margin: 0;
+  background: transparent;
+}
+#editor-ghost.hidden { display: none; }
+
+/* Скрытый измеритель — координаты курсора в textarea. */
+#editor-measure {
+  position: absolute;
+  top: -99999px;
+  left: -99999px;
+  visibility: hidden;
+  pointer-events: none;
+  margin: 0;
+  white-space: pre;
+  word-wrap: normal;
+  overflow-wrap: normal;
+}
+
 /* ============================================================
    Полоса кнопок над клавиатурой (только тач)
    ============================================================ */
