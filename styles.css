@@ -2265,6 +2265,35 @@ html, body, .list, .move-list, .editor-highlight, .ai-body, .diff-box {
   justify-content: center;
 }
 
+/* Ряд подсказок автодополнения над клавиатурой. */
+.kb-suggest-row {
+  display: flex;
+  gap: 4px;
+  padding: 2px 2px 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.kb-suggest-row::-webkit-scrollbar { display: none; }
+.kb-suggest-btn {
+  flex: 0 0 auto;
+  background: #2d3a4d;
+  border: 1px solid #3e5a78;
+  color: #b5cea8;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  cursor: pointer;
+  min-height: 36px;
+  line-height: 1;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.kb-suggest-btn:active { background: #3a4a60; }
+.kb-suggest-row.hidden { display: none; }
+
 /* Ряд дополнительных кнопок — скроллится по горизонтали,
    кнопки нормального размера и не сжимаются */
 .kb-extra-row {

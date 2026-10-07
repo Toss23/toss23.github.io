@@ -1,5 +1,6 @@
 import { $ } from "@core/dom.js";
 import { getRows } from "@core/keyboard-layouts.js";
+import { suggest, getWordAtCursor } from "@core/autocomplete.js";
 
 const LANG_KEY = "kb_lang";
 const MODE_KEY = "kb_custom_enabled";
@@ -165,6 +166,8 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
       el.setRangeText(text, s, e, "end");
       el.dispatchEvent(new Event("input", { bubbles: true }));
     }
+    // Обновляем ряд подсказок автодополнения после каждого ввода.
+    updateSuggestionRow();
 
     // Одноразовый Shift: после любого одиночного ввода на панели «letters»
     // возвращаем нижний регистр и перерисовываем клавиатуру,
@@ -288,6 +291,43 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     return btn;
   }
 
+  // Принимает подсказку: заменяет уже набранный префикс на полное слово.
+  function acceptSuggestion(word) {
+    const el = getTarget();
+    if (!el || !word) return;
+    const { start, end } = getWordAtCursor(el);
+    el.setRangeText(word, start, end, "end");
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    if (el !== textarea && document.activeElement !== el) el.focus();
+    updateSuggestionRow();
+  }
+
+  // Перестраивает ряд подсказок над клавиатурой.
+  // Если подсказок нет — прячет ряд, чтобы не занимал место.
+  function updateSuggestionRow() {
+    const row = container && container.querySelector("#kb-suggest-row");
+    if (!row) return;
+    row.innerHTML = "";
+    const el = getTarget();
+    if (!el) { row.classList.add("hidden"); return; }
+    const { prefix } = getWordAtCursor(el);
+    const items = suggest(prefix, 4);
+    if (!items.length) { row.classList.add("hidden"); return; }
+    row.classList.remove("hidden");
+    for (const word of items) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.tabIndex = -1;
+      btn.className = "kb-suggest-btn";
+      btn.textContent = word;
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        acceptSuggestion(word);
+      });
+      row.appendChild(btn);
+    }
+  }
+
   function updateShiftButton() {
     const btn = container.querySelector('button[data-action="shift"]');
     if (btn) btn.textContent = shift ? "⇪" : "⇧";
@@ -296,6 +336,13 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   function render() {
     if (!container) return;
     container.innerHTML = "";
+
+    // Ряд подсказок автодополнения — над остальными кнопками.
+    // Скрыт, если префикс короче 3 символов или совпадений нет.
+    const suggestRow = document.createElement("div");
+    suggestRow.id = "kb-suggest-row";
+    suggestRow.className = "kb-suggest-row hidden";
+    container.appendChild(suggestRow);
 
     const extra = document.createElement("div");
     extra.className = "kb-row kb-extra-row";
@@ -333,6 +380,9 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     bottom.appendChild(makeKey("▼", { a: "hide" }, { wide: 1.5, special: true, action: "hide" }));
     bottom.appendChild(makeKey("⏎", { a: "enter" }, { wide: 2, special: true, action: "enter" }));
     container.appendChild(bottom);
+
+    // После полной перерисовки обновляем содержимое ряда подсказок.
+    updateSuggestionRow();
   }
 
   function show() {
