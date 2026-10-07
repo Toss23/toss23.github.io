@@ -7,6 +7,15 @@ const MODE_KEY = "kb_custom_enabled";
 const BACKSPACE_DELAY = 400;
 const BACKSPACE_INTERVAL = 50;
 
+// Кастомная клавиатура показывается только после явного тапа по полю
+// редактора, а не на программный фокус. Тап считаем «свежим» в течение
+// этого времени.
+const USER_TAP_WINDOW_MS = 800;
+
+// После ввода с физической клавиатуры кастомная не появляется
+// в течение этого окна — защита от авто-показа при следующем тапе.
+const PHYSICAL_KEY_SUPPRESS_MS = 5000;
+
 // Поля, для которых работает кастомная клавиатура.
 const EDITOR_FIELD_IDS = ["file-content", "editor-find-input", "editor-replace-input"];
 
@@ -71,6 +80,10 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   let panel = "letters";
   let visible = false;
   let lastTouchTime = 0;
+  // Время последнего явного тапа пользователя по полю редактора.
+  let lastUserTapAt = 0;
+  // Время последнего нажатия на физической клавиатуре.
+  let lastPhysicalKeyAt = 0;
 
   let bsDelayTimer = null;
   let bsRepeatTimer = null;
@@ -325,6 +338,10 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
   function show() {
     if (!enabled) return;
     if (visible) return;
+    // Показываем только если пользователь только что тапнул по полю.
+    if (Date.now() - lastUserTapAt > USER_TAP_WINDOW_MS) return;
+    // И только если недавно не печатал на физической.
+    if (Date.now() - lastPhysicalKeyAt < PHYSICAL_KEY_SUPPRESS_MS) return;
     visible = true;
     container.classList.remove("hidden");
     render();
@@ -354,11 +371,48 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     if (!enabled) hide();
   }
 
-  // Следим за фокусом на любом из полей редактора.
-  document.addEventListener("focusin", (e) => {
+  // Тап по полю редактора — единственный триггер показа.
+  // pointerdown срабатывает до focus, ловит и мышь, и палец.
+  document.addEventListener("pointerdown", (e) => {
     if (!enabled) return;
+    if (!e.isTrusted) return;
     const t = e.target;
-    if (t && EDITOR_FIELD_IDS.includes(t.id)) show();
+    if (!t || !t.closest) return;
+    for (const id of EDITOR_FIELD_IDS) {
+      if (t.closest("#" + id)) {
+        lastUserTapAt = Date.now();
+        show();
+        return;
+      }
+    }
+  }, { passive: true });
+
+  // Физическая клавиатура: печатный символ или служебная клавиша
+  // означает, что пользователь печатает не с кастомной. Скрываем её
+  // и запоминаем время, чтобы show() не поднял её сразу после тапа.
+  document.addEventListener("keydown", (e) => {
+    if (!enabled) return;
+    if (!e.isTrusted) return;
+    const key = e.key;
+    if (!key) return;
+
+    // Одни модификаторы — не печать.
+    if (key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" ||
+        key === "CapsLock" || key === "NumLock" || key === "ScrollLock" ||
+        key === "Escape" || key === "ContextMenu" || key === "Fn") return;
+
+    // Шорткаты с Ctrl/Cmd/Alt — тоже не текст.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    const isPrintable = key.length === 1;
+    const isAction = key === "Enter" || key === "Backspace" || key === "Tab" ||
+      key === "Delete" || key === "ArrowLeft" || key === "ArrowRight" ||
+      key === "ArrowUp" || key === "ArrowDown" ||
+      key === "Home" || key === "End" || key === "PageUp" || key === "PageDown";
+    if (!isPrintable && !isAction) return;
+
+    lastPhysicalKeyAt = Date.now();
+    if (visible) hide();
   });
 
   document.addEventListener("focusout", () => {
