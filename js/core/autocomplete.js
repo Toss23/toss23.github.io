@@ -98,6 +98,16 @@ const UNITY = [
   "System.Serializable",
 ];
 
+// Имена атрибутов C#/Unity. Используется для особого поведения при
+// принятии подсказки: после автодополнения в стиле [SerializeField]
+// курсор перепрыгивает закрывающую скобку и ставит пробел.
+export const ATTRIBUTES = new Set([
+  "SerializeField", "HideInInspector", "Header", "Range", "Tooltip",
+  "RequireComponent", "ExecuteInEditMode", "ExecuteAlways", "AddComponentMenu",
+  "CreateAssetMenu", "ContextMenu", "Space", "TextArea",
+  "System.Serializable",
+]);
+
 const ALL = [...new Set([...CSHARP, ...UNITY])];
 
 export function suggest(prefix, limit = 5) {

@@ -1,6 +1,6 @@
 import { $ } from "@core/dom.js";
 import { getRows } from "@core/keyboard-layouts.js";
-import { suggest, getWordAtCursor } from "@core/autocomplete.js";
+import { suggest, getWordAtCursor, ATTRIBUTES } from "@core/autocomplete.js";
 
 const LANG_KEY = "kb_lang";
 const MODE_KEY = "kb_custom_enabled";
@@ -296,7 +296,20 @@ export function initCustomKeyboard({ editorScreen, onVisibilityChange }) {
     const el = getTarget();
     if (!el || !word) return;
     const { start, end } = getWordAtCursor(el);
+    const charBefore = el.value[start - 1];
     el.setRangeText(word, start, end, "end");
+    const pos = el.selectionStart;
+
+    // Атрибут в стиле [SerializeField]: перепрыгиваем "]" и ставим пробел.
+    if (ATTRIBUTES.has(word) && charBefore === "[" && el.value[pos] === "]") {
+      const after = el.value[pos + 1];
+      if (after === " ") {
+        el.setSelectionRange(pos + 2, pos + 2);
+      } else {
+        el.setRangeText(" ", pos + 1, pos + 1, "end");
+      }
+    }
+
     el.dispatchEvent(new Event("input", { bubbles: true }));
     if (el !== textarea && document.activeElement !== el) el.focus();
     updateSuggestionRow();

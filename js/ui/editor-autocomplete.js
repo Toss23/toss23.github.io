@@ -9,7 +9,7 @@
 // padding). В него кладётся текст до курсора плюс zero-width метка,
 // координаты которой дают позицию ghost'а.
 
-import { suggest, getWordAtCursor } from "@core/autocomplete.js";
+import { suggest, getWordAtCursor, ATTRIBUTES } from "@core/autocomplete.js";
 
 export function initEditorAutocomplete({ textarea }) {
   if (!textarea) return null;
@@ -107,7 +107,25 @@ export function initEditorAutocomplete({ textarea }) {
   function accept() {
     if (!current) return false;
     const { word, start, end } = current;
+    // Символ слева от заменяемого префикса — до подстановки.
+    const charBefore = textarea.value[start - 1];
     textarea.setRangeText(word, start, end, "end");
+    const pos = textarea.selectionStart;
+
+    // Особый случай для атрибутов: [Ser|] + Tab → [SerializeField] |.
+    // Проверяем, что слово стоит сразу после "[" (auto-close уже
+    // добавил "]") и что это известный атрибут.
+    if (ATTRIBUTES.has(word) && charBefore === "[" && textarea.value[pos] === "]") {
+      const after = textarea.value[pos + 1];
+      if (after === " ") {
+        // Пробел уже есть — просто перепрыгиваем через него.
+        textarea.setSelectionRange(pos + 2, pos + 2);
+      } else {
+        // Вставляем пробел после "]" и оставляем курсор за ним.
+        textarea.setRangeText(" ", pos + 1, pos + 1, "end");
+      }
+    }
+
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     hide();
     return true;
